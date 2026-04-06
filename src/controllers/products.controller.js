@@ -477,7 +477,7 @@ const getPublicProducts = async (req, res) => {
       minPrice,
       maxPrice,
       inStock,
-      country = 'Global',
+      // country = 'Global',
       sortBy = 'createdAt',
       sortOrder = 'desc',
     } = req.query;
