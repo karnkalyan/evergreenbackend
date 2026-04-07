@@ -1,4 +1,15 @@
 const { processUploadedFiles, cleanupUploadedFiles, deleteFile } = require('../middlewares/upload');
+const {
+  createCountry,
+  updateCountry,
+  deleteCountry,
+  getCountries,
+  getAllCountries,
+  getCountryById,
+  getCountryByCode,
+  toggleCountryStatus,
+  detectCountry
+} = require('./country.controller.js'); 
 // NOTE: Make sure you import processUploadedFiles and cleanupUploadedFiles
 // from '../middlewares/upload' at the top of this file.
 // Make sure you have these functions imported at the top of your file
@@ -110,7 +121,7 @@ const createProduct = async (req, res) => {
         }
 
         const metaTitle = productData.metaTitle || 
-            `${productData.name} | ${brand.name} | Your Store`;
+            `${productData.name} | ${brand.name} `;
 
         const metaDescription = productData.metaDescription || 
             (productData.shortDescription ? productData.shortDescription.substring(0, 160) : null);
@@ -249,7 +260,7 @@ const getAllProducts = async (req, res) => {
     // Extract query parameters
     const {
       page = 1,
-      limit = 10,
+      limit = 1000,
       search,
       category,
       brand,
@@ -463,11 +474,11 @@ const getAllProducts = async (req, res) => {
   }
 };
 
+
 const getPublicProducts = async (req, res) => {
   try {
     const prisma = req.prisma;
 
-    // Query params
     const {
       page = 1,
       limit = 1000,
@@ -477,10 +488,35 @@ const getPublicProducts = async (req, res) => {
       minPrice,
       maxPrice,
       inStock,
-      // country = 'Global',
+      country: queryCountry,
       sortBy = 'createdAt',
       sortOrder = 'desc',
     } = req.query;
+
+    const getHeaderValue = (headerKey) => {
+      const value = req.headers[headerKey];
+      if (Array.isArray(value)) return value[0];
+      return value;
+    };
+
+    const queryCountryValue = Array.isArray(queryCountry) ? queryCountry[0] : queryCountry;
+    const rawCountry =
+      queryCountryValue ||
+      getHeaderValue('x-country') ||
+      getHeaderValue('x-country-code') ||
+      getHeaderValue('country');
+
+    const requestedCountry = rawCountry ? String(rawCountry).trim() : '';
+    let country = 'Global';
+    if (requestedCountry) {
+      if (requestedCountry.toLowerCase() === 'all') {
+        country = 'all';
+      } else if (requestedCountry.toLowerCase() === 'global') {
+        country = 'Global';
+      } else {
+        country = requestedCountry.toUpperCase();
+      }
+    }
 
     const pageNum = Math.max(1, Number(page));
     const limitNum = Math.min(100, Math.max(1, Number(limit)));
@@ -490,37 +526,39 @@ const getPublicProducts = async (req, res) => {
     const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
     const sortDirection = sortOrder === 'asc' ? 'asc' : 'desc';
 
-    // Base where
-    const where = {
-      isDeleted: false,
-      isActive: true,
-      brand: { isDeleted: false, isActive: true },
-      category: { isDeleted: false, isActive: true }
-    };
+    // Use AND array to safely compose all filters
+    const andConditions = [
+      { isDeleted: false },
+      { isActive: true },
+      { brand: { isDeleted: false, isActive: true } },
+      { category: { isDeleted: false, isActive: true } },
+    ];
 
-    // Country filter: product country OR variant country (handled by OR)
+    // ✅ Country filter as its own AND condition (no longer clobbered)
     if (country && country !== 'all') {
-      where.OR = [
-        { country: 'Global' },
-        { country },
-        {
-          variants: {
-            some: {
-              isActive: true,
-              isDeleted: false,
-              country: { in: [country, 'Global'] },
+      andConditions.push({
+        OR: [
+          { country: 'Global' },
+          { country: country },
+          {
+            variants: {
+              some: {
+                isActive: true,
+                isDeleted: false,
+                country: { in: [country, 'Global'] },
+              },
             },
           },
-        },
-      ];
+        ],
+      });
     }
 
-    // Search: WARNING removed 'mode' to avoid Prisma validation errors.
+    console.log('found country', country)
+
+    // ✅ Search filter as its own AND condition
     if (search) {
-      // NOTE: 'mode' removed. If you need case-insensitive behavior, use DB collation or full-text search.
       const searchText = String(search);
-      where.AND = where.AND || [];
-      where.AND.push({
+      andConditions.push({
         OR: [
           { name: { contains: searchText } },
           { sku: { contains: searchText } },
@@ -530,54 +568,60 @@ const getPublicProducts = async (req, res) => {
       });
     }
 
-    // Category filter (accept id or slug/name)
+    // Category filter
     if (category) {
       const catNum = Number(category);
-      where.category = {
-        AND: [
-          { isDeleted: false },
-          { isActive: true },
-          {
-            OR: [
-              !isNaN(catNum) ? { id: catNum } : undefined,
-              { slug: { contains: String(category) } },
-              { name: { contains: String(category) } },
-            ].filter(Boolean),
-          },
-        ],
-      };
+      andConditions.push({
+        category: {
+          AND: [
+            { isDeleted: false },
+            { isActive: true },
+            {
+              OR: [
+                !isNaN(catNum) ? { id: catNum } : undefined,
+                { slug: { contains: String(category) } },
+                { name: { contains: String(category) } },
+              ].filter(Boolean),
+            },
+          ],
+        },
+      });
     }
 
-    // Brand filter (id or slug/name)
+    // Brand filter
     if (brand) {
       const brandNum = Number(brand);
-      where.brand = {
-        AND: [
-          { isDeleted: false },
-          { isActive: true },
-          {
-            OR: [
-              !isNaN(brandNum) ? { id: brandNum } : undefined,
-              { slug: { contains: String(brand) } },
-              { name: { contains: String(brand) } },
-            ].filter(Boolean),
-          },
-        ],
-      };
+      andConditions.push({
+        brand: {
+          AND: [
+            { isDeleted: false },
+            { isActive: true },
+            {
+              OR: [
+                !isNaN(brandNum) ? { id: brandNum } : undefined,
+                { slug: { contains: String(brand) } },
+                { name: { contains: String(brand) } },
+              ].filter(Boolean),
+            },
+          ],
+        },
+      });
     }
 
     // Price filters
     if (minPrice || maxPrice) {
-      where.price = {};
-      if (minPrice) where.price.gte = Number(minPrice);
-      if (maxPrice) where.price.lte = Number(maxPrice);
+      const priceCondition = {};
+      if (minPrice) priceCondition.gte = Number(minPrice);
+      if (maxPrice) priceCondition.lte = Number(maxPrice);
+      andConditions.push({ price: priceCondition });
     }
 
     // Stock filter
-    if (inStock === 'true') where.stock = { gt: 0 };
-    if (inStock === 'false') where.stock = { lte: 0 };
+    if (inStock === 'true') andConditions.push({ stock: { gt: 0 } });
+    if (inStock === 'false') andConditions.push({ stock: { lte: 0 } });
 
-    // Query DB: use identical where for findMany and count
+    const where = { AND: andConditions };
+
     const [products, totalCount] = await Promise.all([
       prisma.product.findMany({
         where,
@@ -626,7 +670,9 @@ const getPublicProducts = async (req, res) => {
             where: {
               isDeleted: false,
               isActive: true,
-              ...(country && country !== 'all' ? { country: { in: [country, 'Global'] } } : {})
+              ...(country && country !== 'all'
+                ? { country: { in: [country, 'Global'] } }
+                : {}),
             },
             include: {
               options: { where: { isDeleted: false, isActive: true } }
@@ -634,7 +680,6 @@ const getPublicProducts = async (req, res) => {
           }
         }
       }),
-      // IMPORTANT: count should not include any `select` - only `where`
       prisma.product.count({ where })
     ]);
 
@@ -667,6 +712,7 @@ const getPublicProducts = async (req, res) => {
     });
   }
 };
+
 
 const getProductById = async (req, res) => {
   try {
@@ -1182,7 +1228,7 @@ const updateProduct = async (req, res) => {
             }
         }
 
-        const metaTitle = productData.metaTitle || `${productData.name} | ${brand.name} | Your Store`;
+        const metaTitle = productData.metaTitle || `${productData.name} | ${brand.name} `;
         const metaDescription = productData.metaDescription || (productData.shortDescription?.substring(0, 160) || '');
         const searchableText = [
             productData.name,
