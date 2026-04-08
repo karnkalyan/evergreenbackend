@@ -1228,6 +1228,19 @@ const updateProduct = async (req, res) => {
         // --- Image Handling Logic ---
         let updatedImages = [...(existing.images || [])];
 
+        // Helper: normalize URL for comparison (strip base URL, keep only path)
+        const normalizeUrl = (url) => {
+            if (!url) return '';
+            try {
+                // If it's a full URL, extract just the pathname
+                const parsed = new URL(url);
+                return parsed.pathname;
+            } catch (e) {
+                // It's already a relative path
+                return url.startsWith('/') ? url : `/${url}`;
+            }
+        };
+
         // Parse imagesToRemove from frontend if provided
         let imagesToRemove = [];
         if (productData.imagesToRemove && typeof productData.imagesToRemove === 'string') {
@@ -1238,22 +1251,54 @@ const updateProduct = async (req, res) => {
             }
         }
 
-        // Remove images marked for deletion
-        if (imagesToRemove.length > 0) {
-            updatedImages = updatedImages.filter(img => !imagesToRemove.includes(img.url));
+        // Normalize the URLs to remove for comparison
+        const normalizedImagesToRemove = imagesToRemove.map(url => normalizeUrl(url));
+        console.log('📋 Images to remove (normalized):', normalizedImagesToRemove);
+        console.log('📋 Existing images:', updatedImages.map(img => img.url));
+
+        // Remove images marked for deletion AND delete files from disk
+        if (normalizedImagesToRemove.length > 0) {
+            // Find the image objects that match the URLs to be removed
+            const imagesToDelete = updatedImages.filter(img => 
+                normalizedImagesToRemove.includes(normalizeUrl(img.url))
+            );
+            
+            console.log(`🗑️ Found ${imagesToDelete.length} images to delete from ${normalizedImagesToRemove.length} requested`);
+            
+            // Delete actual files from disk
+            for (const img of imagesToDelete) {
+                const filePath = img.url || img.path;
+                if (filePath) {
+                    const deleted = deleteFile(filePath);
+                    console.log(`🗑️ Deleted image file: ${filePath} -> ${deleted ? 'SUCCESS' : 'NOT FOUND/FAILED'}`);
+                }
+            }
+            
+            // Remove from the images array
+            updatedImages = updatedImages.filter(img => 
+                !normalizedImagesToRemove.includes(normalizeUrl(img.url))
+            );
         }
 
         // Handle new uploaded images
         if (uploadedImages) {
             if (uploadedImages.primaryImage) {
-                updatedImages = updatedImages.filter(img => !img.isPrimary);
-                updatedImages.push(uploadedImages.primaryImage);
+                // Add new primary image to the beginning
+                updatedImages.unshift(uploadedImages.primaryImage);
             }
 
             if (uploadedImages.secondaryImages && uploadedImages.secondaryImages.length > 0) {
                 updatedImages.push(...uploadedImages.secondaryImages);
             }
         }
+
+        // ALWAYS ensure correct isPrimary flags: first image = primary, rest = not primary
+        updatedImages = updatedImages.map((img, index) => ({
+            ...img,
+            isPrimary: index === 0
+        }));
+        
+        console.log(`📸 Final images array (${updatedImages.length}):`, updatedImages.map((img, i) => `${i}: ${img.url} (primary: ${img.isPrimary})`));
 
         const metaTitle = productData.metaTitle || `${productData.name} | ${brand.name} | Your Store`;
         const metaDescription = productData.metaDescription || (productData.shortDescription?.substring(0, 160) || '');
