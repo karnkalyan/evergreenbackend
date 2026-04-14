@@ -23,19 +23,19 @@ const {
 
 const isAuthenticated = require('../middlewares/isAuthenticated');
 const checkPermission = require('../middlewares/checkPermission');
-const { 
-  uploadProductImages, 
+const {
+  uploadProductImages,
   uploadFiles,
-  uploadFile 
+  uploadFile
 } = require('../middlewares/upload');
 
 module.exports = (prisma) => {
   const router = express.Router();
-  
+
   // Add prisma to request object
-  router.use((req, res, next) => { 
-    req.prisma = prisma; 
-    next(); 
+  router.use((req, res, next) => {
+    req.prisma = prisma;
+    next();
   });
 
   // ==================== PUBLIC ROUTES ====================
@@ -79,7 +79,7 @@ module.exports = (prisma) => {
 
   // ==================== AUTHENTICATED ROUTES ====================
   // These routes require authentication and DON'T apply country filtering
-  
+
   router.use(isAuthenticated(prisma));
 
   // --- ⚙️ PRODUCT CRUD ROUTES ---
@@ -89,7 +89,7 @@ module.exports = (prisma) => {
   router.post(
     '/',
     checkPermission('create_products'),
-    uploadProductImages, 
+    uploadProductImages,
     createProduct
   );
 
@@ -336,13 +336,13 @@ module.exports = (prisma) => {
         });
       } catch (error) {
         console.error('Upload product documents error:', error);
-        
+
         if (req.files) {
           req.files.forEach(file => {
             require('fs').unlinkSync(file.path);
           });
         }
-        
+
         res.status(500).json({
           error: 'Failed to upload documents'
         });
@@ -375,7 +375,7 @@ module.exports = (prisma) => {
         }
 
         const existingDocuments = product.documents || [];
-        const documentToDelete = existingDocuments.find(doc => 
+        const documentToDelete = existingDocuments.find(doc =>
           doc.filename === documentId || doc.url.includes(documentId)
         );
 
@@ -383,7 +383,7 @@ module.exports = (prisma) => {
           return res.status(404).json({ error: 'Document not found' });
         }
 
-        const updatedDocuments = existingDocuments.filter(doc => 
+        const updatedDocuments = existingDocuments.filter(doc =>
           !(doc.filename === documentId || doc.url.includes(documentId))
         );
 
@@ -656,7 +656,7 @@ module.exports = (prisma) => {
         }
 
         const totalSold = product.orderItems.reduce((sum, item) => sum + item.quantity, 0);
-        const successfulOrders = product.orderItems.filter(item => 
+        const successfulOrders = product.orderItems.filter(item =>
           item.order.status === 'DELIVERED'
         ).length;
 

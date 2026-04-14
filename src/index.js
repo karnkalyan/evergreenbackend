@@ -1,14 +1,23 @@
 const express = require('express');
-const prisma = require('../prisma/client.js'); // Adjust the path as necessary
+const prisma = require('../prisma/client.js');
 const cors = require('cors');
 const path = require('path');
 const cookieParser = require('cookie-parser');
+const multer = require('multer'); // ✅ uncommented – required for error handler
 require('dotenv').config();
 const emailProcessor = require('./cron/emailProcessor');
 
 const app = express();
+
+// ✅ Serve static files FIRST – before any other middleware or routes
+app.use('/uploads', (req, res, next) => {
+  console.log(`📁 Static request: ${req.method} ${req.url}`);
+  next();
+}, express.static(path.join(__dirname, 'uploads')));
+
 emailProcessor.startEmailProcessor();
 
+// Routers
 const usersRouter = require('./routes/users.routes');
 const authRouter = require('./routes/auth.routes');
 const categoriesRouter = require('./routes/categories.routes');
@@ -31,42 +40,27 @@ const integration = require('./routes/integrations.routes');
 const emailTemplatesRouter = require('./routes/emailTemplates.routes');
 const automationRulesRouter = require('./routes/automationRules.routes');
 const contactRouter = require('./routes/contact.routes');
-const aboutUsRoute = require('./routes/aboutUs.routes'); // ✅ Singular
+const aboutUsRoute = require('./routes/aboutUs.routes');
 const countryRouter = require('./routes/country.routes');
 const shippingRouter = require('./routes/shipping.routes');
 const paymentMethodRouter = require('./routes/paymentMethod.routes');
 const websiteController = require('./controllers/websiteSettings.controller');
 
-
-
-
-
-// const multer = require('multer');
-
-
-
-
-
-
-// Increase payload size limit for large blog content with images
+// Increase payload size limit
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());
 
-// Enhanced CORS configuration
+// CORS
 app.use(cors({
   origin: process.env.CLIENT_ORIGIN || ['http://localhost:3000', 'http://127.0.0.1:3000'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 }));
-
-// Handle preflight requests
 app.options('*', cors());
 
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Error handling for file uploads
+// Multer error handler (kept after static serving – but won't affect it)
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
@@ -76,9 +70,7 @@ app.use((error, req, res, next) => {
       });
     }
     if (error.code === 'LIMIT_FILE_COUNT') {
-      return res.status(400).json({
-        error: 'Too many files'
-      });
+      return res.status(400).json({ error: 'Too many files' });
     }
     if (error.code === 'LIMIT_UNEXPECTED_FILE') {
       return res.status(400).json({
@@ -87,17 +79,11 @@ app.use((error, req, res, next) => {
       });
     }
   }
-
-  if (error.message.includes('Invalid file type')) {
-    return res.status(400).json({
-      error: error.message
-    });
+  if (error.message?.includes('Invalid file type')) {
+    return res.status(400).json({ error: error.message });
   }
-
   next(error);
 });
-
-app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
 
 // SEO routes
 app.get('/sitemap.xml', (req, res) => {
@@ -109,6 +95,7 @@ app.get('/robots.txt', (req, res) => {
   websiteController.getRobotsTxt(req, res);
 });
 
+// API routes
 app.use('/users', usersRouter(prisma));
 app.use('/categories', categoriesRouter(prisma));
 app.use('/brands', brandRouter(prisma));
@@ -131,16 +118,12 @@ app.use('/integrations', integration(prisma));
 app.use('/email-templates', emailTemplatesRouter(prisma));
 app.use('/automation-rules', automationRulesRouter(prisma));
 app.use('/contact-requests', contactRouter(prisma));
-app.use('/about-us', aboutUsRoute(prisma)); // ✅ Use singular variable name
+app.use('/about-us', aboutUsRoute(prisma));
 app.use('/countries', countryRouter(prisma));
 app.use('/shipping', shippingRouter(prisma));
 app.use('/payment-methods', paymentMethodRouter(prisma));
 
-
-// app.use('')
-
-
-
+// Global error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(err.status || 500).json({
@@ -154,7 +137,7 @@ const PORT = process.env.PORT || 3200;
 app.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
   console.log(`CORS Client Origin: ${process.env.CLIENT_ORIGIN}`);
-  console.log(`JWT Secret: ${process.env.ACCESS_SECRET ? '***** (Set)' : 'NOT SET (Using default in auth.js)'}`);
+  console.log(`JWT Secret: ${process.env.ACCESS_SECRET ? '***** (Set)' : 'NOT SET'}`);
   console.log(`Payload limit: 50MB`);
 });
 
