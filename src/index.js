@@ -3,22 +3,29 @@ const prisma = require('../prisma/client.js');
 const cors = require('cors');
 const path = require('path');
 const cookieParser = require('cookie-parser');
-const multer = require('multer'); // ✅ uncommented – required for error handler
+const multer = require('multer');
 require('dotenv').config();
 const emailProcessor = require('./cron/emailProcessor');
 
 const app = express();
-app.set('trust proxy', 1);   // ✅ trust Nginx proxy
+
+// ✅ TRUST PROXY – must be set BEFORE any middleware that uses it
+app.set('trust proxy', true);
+
+// ✅ DEBUG: Log the absolute path used for static files
+const staticPath = path.join(__dirname, 'uploads');
+console.log(`📂 Static files will be served from: ${staticPath}`);
 
 // ✅ Serve static files FIRST – before any other middleware or routes
 app.use('/uploads', (req, res, next) => {
   console.log(`📁 Static request: ${req.method} ${req.url}`);
   next();
-}, express.static(path.join(__dirname, 'uploads')));
+}, express.static(staticPath));
 
+// ✅ Start email processor after static middleware (order not critical)
 emailProcessor.startEmailProcessor();
 
-// Routers
+// Import routers (no changes)
 const usersRouter = require('./routes/users.routes');
 const authRouter = require('./routes/auth.routes');
 const categoriesRouter = require('./routes/categories.routes');
@@ -47,12 +54,11 @@ const shippingRouter = require('./routes/shipping.routes');
 const paymentMethodRouter = require('./routes/paymentMethod.routes');
 const websiteController = require('./controllers/websiteSettings.controller');
 
-// Increase payload size limit
+// Body parsers & CORS
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());
 
-// CORS
 app.use(cors({
   origin: process.env.CLIENT_ORIGIN || ['http://localhost:3000', 'http://127.0.0.1:3000'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -61,7 +67,7 @@ app.use(cors({
 }));
 app.options('*', cors());
 
-// Multer error handler (kept after static serving – but won't affect it)
+// Multer error handler
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
@@ -137,6 +143,7 @@ const PORT = process.env.PORT || 3200;
 
 app.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
+  console.log(`Static files from: ${staticPath}`);
   console.log(`CORS Client Origin: ${process.env.CLIENT_ORIGIN}`);
   console.log(`JWT Secret: ${process.env.ACCESS_SECRET ? '***** (Set)' : 'NOT SET'}`);
   console.log(`Payload limit: 50MB`);
