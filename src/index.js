@@ -12,20 +12,18 @@ const app = express();
 // ✅ TRUST PROXY – must be set BEFORE any middleware that uses it
 app.set('trust proxy', true);
 
-// ✅ DEBUG: Log the absolute path used for static files
-const staticPath = path.join(__dirname, 'uploads');
+// ✅ Correct static path – one level above src/
+const staticPath = path.join(__dirname, '..', 'uploads');
 console.log(`📂 Static files will be served from: ${staticPath}`);
 
-// ✅ Serve static files FIRST – before any other middleware or routes
 app.use('/uploads', (req, res, next) => {
   console.log(`📁 Static request: ${req.method} ${req.url}`);
   next();
 }, express.static(staticPath));
 
-// ✅ Start email processor after static middleware (order not critical)
 emailProcessor.startEmailProcessor();
 
-// Import routers (no changes)
+// Routers (import after trust proxy)
 const usersRouter = require('./routes/users.routes');
 const authRouter = require('./routes/auth.routes');
 const categoriesRouter = require('./routes/categories.routes');
