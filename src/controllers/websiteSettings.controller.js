@@ -1,9 +1,8 @@
 const { cleanupUploadedFiles } = require('../middlewares/upload');
 
-/**
- * Get website settings
- */
-// Add this helper function at the top of your controller
+/* =========================================================
+   DEFAULT APPEARANCE SETTINGS
+========================================================= */
 const getDefaultAppearanceSettings = () => ({
   colors: {
     primaryColor: '#3b82f6',
@@ -40,33 +39,72 @@ const getDefaultAppearanceSettings = () => ({
   boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)'
 });
 
-// Update the getWebsiteSettings function
+/* =========================================================
+   HELPERS
+========================================================= */
+const normalizeSeo = (data = {}) => ({
+  metaTitle: data.metaTitle || data.title || '',
+  metaDescription: data.metaDescription || data.description || '',
+  keywords: data.keywords || '',
+  canonicalUrl: data.canonicalUrl || '',
+  ogTitle: data.ogTitle || data.metaTitle || data.title || '',
+  ogDescription: data.ogDescription || data.metaDescription || data.description || '',
+  ogImage: data.ogImage || data.metaImage || '',
+  twitterTitle: data.twitterTitle || data.metaTitle || data.title || '',
+  twitterDescription: data.twitterDescription || data.metaDescription || data.description || '',
+  twitterImage: data.twitterImage || data.metaImage || '',
+  structuredData: data.structuredData || null,
+  metaRobots: data.metaRobots || 'index, follow'
+});
+
+const escapeXml = (unsafe = '') =>
+  String(unsafe)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
+const safeBaseUrl = (url) => String(url || '').replace(/\/$/, '');
+
+const joinUrl = (baseUrl, path = '') => {
+  const base = safeBaseUrl(baseUrl);
+  const cleanPath = String(path || '').startsWith('/') ? String(path) : `/${path}`;
+  return `${base}${cleanPath}`;
+};
+
+const encodePathSegment = (value) => encodeURIComponent(String(value || '').trim());
+
+const buildSitemapUrl = (baseUrl, path) => escapeXml(joinUrl(baseUrl, path));
+
+const getTodayIso = () => new Date().toISOString().split('T')[0];
+
+/* =========================================================
+   WEBSITE SETTINGS
+========================================================= */
 const getWebsiteSettings = async (req, res) => {
   try {
     let settings = await req.prisma.websiteSettings.findFirst({
-      where: { 
+      where: {
         isActive: true,
-        isDeleted: false 
+        isDeleted: false
       }
     });
 
     if (!settings) {
       settings = await req.prisma.websiteSettings.create({
         data: {
-          // ... your existing default fields ...
+          appearanceSettings: getDefaultAppearanceSettings(),
+          isActive: true
+        }
+      });
+    } else if (!settings.appearanceSettings) {
+      settings = await req.prisma.websiteSettings.update({
+        where: { id: settings.id },
+        data: {
           appearanceSettings: getDefaultAppearanceSettings()
         }
       });
-    } else {
-      // If settings exist but appearanceSettings is missing, update it
-      if (!settings.appearanceSettings) {
-        settings = await req.prisma.websiteSettings.update({
-          where: { id: settings.id },
-          data: {
-            appearanceSettings: getDefaultAppearanceSettings()
-          }
-        });
-      }
     }
 
     res.json({
@@ -83,20 +121,15 @@ const getWebsiteSettings = async (req, res) => {
   }
 };
 
-/**
- * Update website settings
- */
 const updateWebsiteSettings = async (req, res) => {
   try {
     const {
-      // Header
       headerLogo,
       headerLogoAlt,
       headerCtaText,
       headerCtaLink,
       headerNavigation,
-      
-      // Footer
+
       footerLogo,
       footerLogoAlt,
       footerDescription,
@@ -106,57 +139,48 @@ const updateWebsiteSettings = async (req, res) => {
       footerCategories,
       footerPaymentMethods,
       footerCopyrightText,
-      
-      // SEO Global
+
       siteTitle,
       siteDescription,
       siteKeywords,
       siteUrl,
       siteLogo,
       favicon,
-      
-      // Social Media
+
       facebookUrl,
       twitterUrl,
       instagramUrl,
       linkedinUrl,
-      
-      // Analytics
+
       googleAnalyticsId,
       googleTagManagerId,
       facebookPixelId,
-      
-      // Additional SEO
+
       structuredData,
       robotsTxt,
       sitemapUrl,
-      
-      // Meta
+
       metaTitle,
       metaDescription,
       metaImage,
 
-      // Appearance Settings
       appearanceSettings
     } = req.body;
 
-    // Get existing settings or create if doesn't exist
-    let existingSettings = await req.prisma.websiteSettings.findFirst({
-      where: { 
+    const existingSettings = await req.prisma.websiteSettings.findFirst({
+      where: {
         isActive: true,
-        isDeleted: false 
+        isDeleted: false
       }
     });
 
     const settingsData = {
-      // Header
       ...(headerLogo !== undefined && { headerLogo }),
       ...(headerLogoAlt !== undefined && { headerLogoAlt }),
       ...(headerCtaText !== undefined && { headerCtaText }),
       ...(headerCtaLink !== undefined && { headerCtaLink }),
       ...(headerNavigation !== undefined && { headerNavigation }),
-      
-      // Footer
+
       ...(footerLogo !== undefined && { footerLogo }),
       ...(footerLogoAlt !== undefined && { footerLogoAlt }),
       ...(footerDescription !== undefined && { footerDescription }),
@@ -166,37 +190,31 @@ const updateWebsiteSettings = async (req, res) => {
       ...(footerCategories !== undefined && { footerCategories }),
       ...(footerPaymentMethods !== undefined && { footerPaymentMethods }),
       ...(footerCopyrightText !== undefined && { footerCopyrightText }),
-      
-      // SEO Global
+
       ...(siteTitle !== undefined && { siteTitle }),
       ...(siteDescription !== undefined && { siteDescription }),
       ...(siteKeywords !== undefined && { siteKeywords }),
       ...(siteUrl !== undefined && { siteUrl }),
       ...(siteLogo !== undefined && { siteLogo }),
       ...(favicon !== undefined && { favicon }),
-      
-      // Social Media
+
       ...(facebookUrl !== undefined && { facebookUrl }),
       ...(twitterUrl !== undefined && { twitterUrl }),
       ...(instagramUrl !== undefined && { instagramUrl }),
       ...(linkedinUrl !== undefined && { linkedinUrl }),
-      
-      // Analytics
+
       ...(googleAnalyticsId !== undefined && { googleAnalyticsId }),
       ...(googleTagManagerId !== undefined && { googleTagManagerId }),
       ...(facebookPixelId !== undefined && { facebookPixelId }),
-      
-      // Additional SEO
+
       ...(structuredData !== undefined && { structuredData }),
       ...(robotsTxt !== undefined && { robotsTxt }),
       ...(sitemapUrl !== undefined && { sitemapUrl }),
-      
-      // Meta
+
       ...(metaTitle !== undefined && { metaTitle }),
       ...(metaDescription !== undefined && { metaDescription }),
       ...(metaImage !== undefined && { metaImage }),
 
-      // Appearance Settings
       ...(appearanceSettings !== undefined && { appearanceSettings })
     };
 
@@ -221,7 +239,6 @@ const updateWebsiteSettings = async (req, res) => {
       message: 'Website settings updated successfully',
       data: updatedSettings
     });
-
   } catch (error) {
     console.error('Error updating website settings:', error);
     res.status(500).json({
@@ -232,9 +249,9 @@ const updateWebsiteSettings = async (req, res) => {
   }
 };
 
-/**
- * Get SEO settings for a specific page
- */
+/* =========================================================
+   SEO
+========================================================= */
 const getPageSeo = async (req, res) => {
   try {
     const { pageType, pageSlug, pageId } = req.query;
@@ -252,63 +269,39 @@ const getPageSeo = async (req, res) => {
       isDeleted: false
     };
 
-    if (pageSlug) {
-      whereClause.pageSlug = pageSlug;
-    }
+    if (pageSlug) whereClause.pageSlug = pageSlug;
+    if (pageId) whereClause.pageId = parseInt(pageId, 10);
 
-    if (pageId) {
-      whereClause.pageId = parseInt(pageId);
-    }
-
-    const seoData = await req.prisma.seoPage.findFirst({
+    const pageSeo = await req.prisma.seoPage.findFirst({
       where: whereClause
     });
 
-    // If no specific SEO data found, return global settings
-    if (!seoData) {
-      const globalSettings = await req.prisma.websiteSettings.findFirst({
-        where: { 
-          isActive: true,
-          isDeleted: false 
-        },
-        select: {
-          siteTitle: true,
-          siteDescription: true,
-          siteKeywords: true,
-          siteLogo: true,
-          metaTitle: true,
-          metaDescription: true,
-          metaImage: true,
-          appearanceSettings: true
-        }
-      });
-
-      return res.json({
-        success: true,
-        data: globalSettings,
-        isDefault: true
-      });
-    }
-
-    res.json({
-      success: true,
-      data: seoData,
-      isDefault: false
+    const globalSettings = await req.prisma.websiteSettings.findFirst({
+      where: {
+        isActive: true,
+        isDeleted: false
+      }
     });
 
+    const mergedSeo = normalizeSeo({
+      ...globalSettings,
+      ...pageSeo
+    });
+
+    return res.json({
+      success: true,
+      data: mergedSeo,
+      isDefault: !pageSeo
+    });
   } catch (error) {
     console.error('Error fetching page SEO:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error while fetching page SEO',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: 'Internal server error while fetching page SEO'
     });
   }
 };
 
-/**
- * Create or update SEO for a page
- */
 const updatePageSeo = async (req, res) => {
   try {
     const {
@@ -333,7 +326,6 @@ const updatePageSeo = async (req, res) => {
       metaViewport
     } = req.body;
 
-    // Validate required fields
     if (!pageType || !title) {
       return res.status(400).json({
         success: false,
@@ -347,13 +339,8 @@ const updatePageSeo = async (req, res) => {
       isDeleted: false
     };
 
-    if (pageSlug) {
-      whereClause.pageSlug = pageSlug;
-    }
-
-    if (pageId) {
-      whereClause.pageId = parseInt(pageId);
-    }
+    if (pageSlug) whereClause.pageSlug = pageSlug;
+    if (pageId) whereClause.pageId = parseInt(pageId, 10);
 
     const existingSeo = await req.prisma.seoPage.findFirst({
       where: whereClause
@@ -362,7 +349,7 @@ const updatePageSeo = async (req, res) => {
     const seoData = {
       pageType,
       pageSlug: pageSlug || null,
-      pageId: pageId ? parseInt(pageId) : null,
+      pageId: pageId ? parseInt(pageId, 10) : null,
       title,
       description,
       keywords,
@@ -399,10 +386,9 @@ const updatePageSeo = async (req, res) => {
       message: 'Page SEO updated successfully',
       data: result
     });
-
   } catch (error) {
     console.error('Error updating page SEO:', error);
-    
+
     if (error.code === 'P2002') {
       return res.status(400).json({
         success: false,
@@ -418,9 +404,9 @@ const updatePageSeo = async (req, res) => {
   }
 };
 
-/**
- * Get navigation menus
- */
+/* =========================================================
+   NAVIGATION
+========================================================= */
 const getNavigationMenus = async (req, res) => {
   try {
     const { location } = req.query;
@@ -445,7 +431,6 @@ const getNavigationMenus = async (req, res) => {
       success: true,
       data: menus
     });
-
   } catch (error) {
     console.error('Error fetching navigation menus:', error);
     res.status(500).json({
@@ -456,9 +441,6 @@ const getNavigationMenus = async (req, res) => {
   }
 };
 
-/**
- * Create navigation menu
- */
 const createNavigationMenu = async (req, res) => {
   try {
     const { name, slug, location, items } = req.body;
@@ -470,7 +452,6 @@ const createNavigationMenu = async (req, res) => {
       });
     }
 
-    // Check if slug already exists
     const existingMenu = await req.prisma.navigationMenu.findUnique({
       where: { slug }
     });
@@ -496,10 +477,9 @@ const createNavigationMenu = async (req, res) => {
       message: 'Navigation menu created successfully',
       data: menu
     });
-
   } catch (error) {
     console.error('Error creating navigation menu:', error);
-    
+
     if (error.code === 'P2002') {
       return res.status(400).json({
         success: false,
@@ -515,24 +495,20 @@ const createNavigationMenu = async (req, res) => {
   }
 };
 
-/**
- * Update navigation menu
- */
 const updateNavigationMenu = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, location, items, isActive } = req.body;
 
-    if (!id || isNaN(parseInt(id))) {
+    if (!id || isNaN(parseInt(id, 10))) {
       return res.status(400).json({
         success: false,
         message: 'Valid menu ID is required'
       });
     }
 
-    const menuId = parseInt(id);
+    const menuId = parseInt(id, 10);
 
-    // Check if menu exists
     const existingMenu = await req.prisma.navigationMenu.findUnique({
       where: { id: menuId }
     });
@@ -560,10 +536,9 @@ const updateNavigationMenu = async (req, res) => {
       message: 'Navigation menu updated successfully',
       data: updatedMenu
     });
-
   } catch (error) {
     console.error('Error updating navigation menu:', error);
-    
+
     if (error.code === 'P2025') {
       return res.status(404).json({
         success: false,
@@ -579,23 +554,19 @@ const updateNavigationMenu = async (req, res) => {
   }
 };
 
-/**
- * Delete navigation menu
- */
 const deleteNavigationMenu = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!id || isNaN(parseInt(id))) {
+    if (!id || isNaN(parseInt(id, 10))) {
       return res.status(400).json({
         success: false,
         message: 'Valid menu ID is required'
       });
     }
 
-    const menuId = parseInt(id);
+    const menuId = parseInt(id, 10);
 
-    // Check if menu exists
     const menu = await req.prisma.navigationMenu.findUnique({
       where: { id: menuId }
     });
@@ -607,7 +578,6 @@ const deleteNavigationMenu = async (req, res) => {
       });
     }
 
-    // Soft delete
     await req.prisma.navigationMenu.update({
       where: { id: menuId },
       data: { isDeleted: true, isActive: false }
@@ -617,10 +587,9 @@ const deleteNavigationMenu = async (req, res) => {
       success: true,
       message: 'Navigation menu deleted successfully'
     });
-
   } catch (error) {
     console.error('Error deleting navigation menu:', error);
-    
+
     if (error.code === 'P2025') {
       return res.status(404).json({
         success: false,
@@ -636,36 +605,32 @@ const deleteNavigationMenu = async (req, res) => {
   }
 };
 
-/**
- * Get sitemap XML
- */
+/* =========================================================
+   SITEMAP
+========================================================= */
 const getSitemap = async (req, res) => {
   try {
-    const baseUrl = process.env.FRONTEND_URL || 'https://evergreenpharma.us';
-    
-    // Get all products
-    const products = await req.prisma.product.findMany({
-      where: { isActive: true, isDeleted: false },
-      select: { slug: true, updatedAt: true }
-    });
+    const baseUrl = safeBaseUrl(process.env.FRONTEND_URL || 'https://evergreenpharma.us');
 
-    // Get all categories
-    const categories = await req.prisma.category.findMany({
-      where: { isActive: true, isDeleted: false },
-      select: { slug: true, updatedAt: true }
-    });
+    const [products, categories, blogs] = await Promise.all([
+      req.prisma.product.findMany({
+        where: { isActive: true, isDeleted: false },
+        select: { slug: true, updatedAt: true }
+      }),
+      req.prisma.category.findMany({
+        where: { isActive: true, isDeleted: false },
+        select: { slug: true, updatedAt: true }
+      }),
+      req.prisma.blogPost.findMany({
+        where: {
+          status: 'published',
+          isDeleted: false,
+          isActive: true
+        },
+        select: { slug: true, updatedAt: true }
+      })
+    ]);
 
-    // Get all blogs
-    const blogs = await req.prisma.blogPost.findMany({
-      where: {
-        status: 'published',
-        isDeleted: false,
-        isActive: true
-      },
-      select: { slug: true, updatedAt: true }
-    });
-
-    // Static routes
     const staticRoutes = [
       { url: '/', priority: '1.0', changefreq: 'daily' },
       { url: '/category/all', priority: '0.9', changefreq: 'weekly' },
@@ -681,53 +646,61 @@ const getSitemap = async (req, res) => {
       { url: '/disclaimer', priority: '0.5', changefreq: 'yearly' }
     ];
 
-    let sitemap = '<?xml version="1.0" encoding="UTF-8"?>\n';
-    sitemap += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
+    const urlEntries = [];
 
-    // Add static routes
     staticRoutes.forEach(route => {
-      sitemap += '  <url>\n';
-      sitemap += `    <loc>${baseUrl}${route.url}</loc>\n`;
-      sitemap += `    <priority>${route.priority}</priority>\n`;
-      sitemap += `    <changefreq>${route.changefreq}</changefreq>\n`;
-      sitemap += '  </url>\n';
+      urlEntries.push(`
+  <url>
+    <loc>${buildSitemapUrl(baseUrl, route.url)}</loc>
+    <lastmod>${getTodayIso()}</lastmod>
+    <priority>${route.priority}</priority>
+    <changefreq>${route.changefreq}</changefreq>
+  </url>`);
     });
 
-    // Add product routes
     products.forEach(product => {
-      sitemap += '  <url>\n';
-      sitemap += `    <loc>${baseUrl}/product/${product.slug}</loc>\n`;
-      sitemap += `    <lastmod>${product.updatedAt.toISOString().split('T')[0]}</lastmod>\n`;
-      sitemap += '    <priority>0.8</priority>\n';
-      sitemap += '    <changefreq>weekly</changefreq>\n';
-      sitemap += '  </url>\n';
+      if (!product.slug) return;
+
+      urlEntries.push(`
+  <url>
+    <loc>${buildSitemapUrl(baseUrl, `/product/${encodePathSegment(product.slug)}`)}</loc>
+    <lastmod>${product.updatedAt.toISOString().split('T')[0]}</lastmod>
+    <priority>0.8</priority>
+    <changefreq>weekly</changefreq>
+  </url>`);
     });
 
-    // Add category routes
     categories.forEach(category => {
-      sitemap += '  <url>\n';
-      sitemap += `    <loc>${baseUrl}/category/${category.slug}</loc>\n`;
-      sitemap += `    <lastmod>${category.updatedAt.toISOString().split('T')[0]}</lastmod>\n`;
-      sitemap += '    <priority>0.7</priority>\n';
-      sitemap += '    <changefreq>weekly</changefreq>\n';
-      sitemap += '  </url>\n';
+      if (!category.slug) return;
+
+      urlEntries.push(`
+  <url>
+    <loc>${buildSitemapUrl(baseUrl, `/category/${encodePathSegment(category.slug)}`)}</loc>
+    <lastmod>${category.updatedAt.toISOString().split('T')[0]}</lastmod>
+    <priority>0.7</priority>
+    <changefreq>weekly</changefreq>
+  </url>`);
     });
 
-    // Add blog routes
     blogs.forEach(blog => {
-      sitemap += '  <url>\n';
-      sitemap += `    <loc>${baseUrl}/blog/${blog.slug}</loc>\n`;
-      sitemap += `    <lastmod>${blog.updatedAt.toISOString().split('T')[0]}</lastmod>\n`;
-      sitemap += '    <priority>0.6</priority>\n';
-      sitemap += '    <changefreq>monthly</changefreq>\n';
-      sitemap += '  </url>\n';
+      if (!blog.slug) return;
+
+      urlEntries.push(`
+  <url>
+    <loc>${buildSitemapUrl(baseUrl, `/blog/${encodePathSegment(blog.slug)}`)}</loc>
+    <lastmod>${blog.updatedAt.toISOString().split('T')[0]}</lastmod>
+    <priority>0.6</priority>
+    <changefreq>monthly</changefreq>
+  </url>`);
     });
 
-    sitemap += '</urlset>';
+    const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urlEntries.join('\n')}
+</urlset>`;
 
     res.header('Content-Type', 'application/xml');
     res.send(sitemap);
-
   } catch (error) {
     console.error('Error generating sitemap:', error);
     res.status(500).json({
@@ -737,14 +710,13 @@ const getSitemap = async (req, res) => {
   }
 };
 
-/**
- * Get robots.txt
- */
+/* =========================================================
+   ROBOTS.TXT
+========================================================= */
 const getRobotsTxt = async (req, res) => {
   try {
-    const baseUrl = process.env.FRONTEND_URL || 'https://evergreenpharma.us';
-    
-    // Get robots.txt content from settings
+    const baseUrl = safeBaseUrl(process.env.FRONTEND_URL || 'https://evergreenpharma.us');
+
     const settings = await req.prisma.websiteSettings.findFirst({
       where: { isActive: true, isDeleted: false },
       select: { robotsTxt: true }
@@ -753,7 +725,6 @@ const getRobotsTxt = async (req, res) => {
     let robotsContent = settings?.robotsTxt;
 
     if (!robotsContent) {
-      // Default robots.txt
       robotsContent = `User-agent: *
 Allow: /
 
@@ -762,7 +733,6 @@ Sitemap: ${baseUrl}/sitemap.xml`;
 
     res.header('Content-Type', 'text/plain');
     res.send(robotsContent);
-
   } catch (error) {
     console.error('Error serving robots.txt:', error);
     res.status(500).json({
