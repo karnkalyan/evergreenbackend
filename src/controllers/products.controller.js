@@ -470,8 +470,8 @@ const getPublicProducts = async (req, res) => {
       sortOrder = 'desc'
     } = req.query;
 
-    // --- Build the base where clause for COUNT (no 'mode' to avoid errors) ---
-    const whereForCount = {
+    // --- Build a single where clause WITHOUT 'mode' ---
+    const where = {
       isDeleted: false,
       isActive: true,
       brand: {
@@ -484,9 +484,9 @@ const getPublicProducts = async (req, res) => {
       }
     };
 
-    // Country filter (exact match, no mode)
+    // Country filter (exact match)
     if (country && country !== 'all') {
-      whereForCount.OR = [
+      where.OR = [
         { country: 'Global' },
         { country: country },
         {
@@ -501,10 +501,10 @@ const getPublicProducts = async (req, res) => {
       ];
     }
 
-    // Search filter (use contains without 'mode' for count – rely on DB collation)
+    // Search filter (contains without 'mode')
     if (search) {
-      whereForCount.OR = [
-        ...(whereForCount.OR || []),
+      where.OR = [
+        ...(where.OR || []),
         { name: { contains: search } },
         { description: { contains: search } },
         { sku: { contains: search } },
@@ -512,9 +512,9 @@ const getPublicProducts = async (req, res) => {
       ].filter(Boolean);
     }
 
-    // Category filter (without mode)
+    // Category filter (contains without 'mode')
     if (category) {
-      whereForCount.category = {
+      where.category = {
         OR: [
           { id: isNaN(Number(category)) ? undefined : Number(category) },
           { slug: { contains: category } },
@@ -523,9 +523,9 @@ const getPublicProducts = async (req, res) => {
       };
     }
 
-    // Brand filter (without mode)
+    // Brand filter (contains without 'mode')
     if (brand) {
-      whereForCount.brand = {
+      where.brand = {
         OR: [
           { id: isNaN(Number(brand)) ? undefined : Number(brand) },
           { slug: { contains: brand } },
@@ -536,72 +536,18 @@ const getPublicProducts = async (req, res) => {
 
     // Price range
     if (minPrice || maxPrice) {
-      whereForCount.price = {};
-      if (minPrice) whereForCount.price.gte = parseFloat(minPrice);
-      if (maxPrice) whereForCount.price.lte = parseFloat(maxPrice);
+      where.price = {};
+      if (minPrice) where.price.gte = parseFloat(minPrice);
+      if (maxPrice) where.price.lte = parseFloat(maxPrice);
     }
 
     // Stock filter
     if (inStock !== undefined) {
       if (inStock === 'true' || inStock === true) {
-        whereForCount.stock = { gt: 0 };
+        where.stock = { gt: 0 };
       } else if (inStock === 'false' || inStock === false) {
-        whereForCount.stock = { lte: 0 };
+        where.stock = { lte: 0 };
       }
-    }
-
-    // --- Build where clause for FIND MANY (with 'mode: insensitive' for better search) ---
-    // Start with a deep copy of whereForCount, then add 'mode' where needed
-    const whereForFindMany = JSON.parse(JSON.stringify(whereForCount));
-
-    // Add 'mode: insensitive' to search conditions
-    if (search && whereForFindMany.OR) {
-      // The OR array contains the country conditions (if any) + search conditions.
-      // We need to locate the search condition objects and add 'mode' to them.
-      // Safer: rebuild the OR array for findMany with explicit mode.
-      const countryConditions = [];
-      if (country && country !== 'all') {
-        countryConditions.push(
-          { country: 'Global' },
-          { country: country },
-          {
-            variants: {
-              some: {
-                country: { in: [country, 'Global'] },
-                isDeleted: false,
-                isActive: true
-              }
-            }
-          }
-        );
-      }
-
-      const searchConditions = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-        { sku: { contains: search, mode: 'insensitive' } },
-        { searchableText: { contains: search, mode: 'insensitive' } }
-      ];
-
-      whereForFindMany.OR = [...countryConditions, ...searchConditions];
-    }
-
-    // Add 'mode' to category slug/name filters
-    if (category && whereForFindMany.category?.OR) {
-      whereForFindMany.category.OR = whereForFindMany.category.OR.map(cond => {
-        if (cond.slug) return { slug: { contains: category, mode: 'insensitive' } };
-        if (cond.name) return { name: { contains: category, mode: 'insensitive' } };
-        return cond; // id condition unchanged
-      });
-    }
-
-    // Add 'mode' to brand slug/name filters
-    if (brand && whereForFindMany.brand?.OR) {
-      whereForFindMany.brand.OR = whereForFindMany.brand.OR.map(cond => {
-        if (cond.slug) return { slug: { contains: brand, mode: 'insensitive' } };
-        if (cond.name) return { name: { contains: brand, mode: 'insensitive' } };
-        return cond;
-      });
     }
 
     // Validate and parse pagination
@@ -616,10 +562,10 @@ const getPublicProducts = async (req, res) => {
     const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
     const sortDirection = validSortOrders.includes(sortOrder) ? sortOrder : 'desc';
 
-    // Execute queries in parallel with separate where clauses
+    // Execute queries in parallel using the SAME where clause
     const [products, totalCount] = await Promise.all([
       prisma.product.findMany({
-        where: whereForFindMany,
+        where,
         select: {
           id: true,
           sku: true,
@@ -698,7 +644,7 @@ const getPublicProducts = async (req, res) => {
         take: limitNum,
         orderBy: { [sortField]: sortDirection }
       }),
-      prisma.product.count({ where: whereForCount })   // <-- uses the safe, mode‑free where
+      prisma.product.count({ where })
     ]);
 
     // Filter out products that have no available variants for the country
