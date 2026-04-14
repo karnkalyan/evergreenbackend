@@ -455,7 +455,6 @@ const getPublicProducts = async (req, res) => {
   try {
     const prisma = req.prisma;
 
-    // Extract query parameters
     const {
       page = 1,
       limit = 1000,
@@ -470,21 +469,13 @@ const getPublicProducts = async (req, res) => {
       sortOrder = 'desc'
     } = req.query;
 
-    // --- Build a single where clause WITHOUT 'mode' ---
     const where = {
       isDeleted: false,
       isActive: true,
-      brand: {
-        isDeleted: false,
-        isActive: true
-      },
-      category: {
-        isDeleted: false,
-        isActive: true
-      }
+      brand: { isDeleted: false, isActive: true },
+      category: { isDeleted: false, isActive: true }
     };
 
-    // Country filter (exact match)
     if (country && country !== 'all') {
       where.OR = [
         { country: 'Global' },
@@ -501,7 +492,6 @@ const getPublicProducts = async (req, res) => {
       ];
     }
 
-    // Search filter (contains without 'mode')
     if (search) {
       where.OR = [
         ...(where.OR || []),
@@ -512,7 +502,6 @@ const getPublicProducts = async (req, res) => {
       ].filter(Boolean);
     }
 
-    // Category filter (contains without 'mode')
     if (category) {
       where.category = {
         OR: [
@@ -523,7 +512,6 @@ const getPublicProducts = async (req, res) => {
       };
     }
 
-    // Brand filter (contains without 'mode')
     if (brand) {
       where.brand = {
         OR: [
@@ -534,14 +522,12 @@ const getPublicProducts = async (req, res) => {
       };
     }
 
-    // Price range
     if (minPrice || maxPrice) {
       where.price = {};
       if (minPrice) where.price.gte = parseFloat(minPrice);
       if (maxPrice) where.price.lte = parseFloat(maxPrice);
     }
 
-    // Stock filter
     if (inStock !== undefined) {
       if (inStock === 'true' || inStock === true) {
         where.stock = { gt: 0 };
@@ -550,19 +536,15 @@ const getPublicProducts = async (req, res) => {
       }
     }
 
-    // Validate and parse pagination
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
     const skip = (pageNum - 1) * limitNum;
 
-    // Validate sort parameters
     const validSortFields = ['name', 'price', 'createdAt', 'updatedAt', 'views', 'stock', 'rating'];
     const validSortOrders = ['asc', 'desc'];
-
     const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
     const sortDirection = validSortOrders.includes(sortOrder) ? sortOrder : 'desc';
 
-    // Execute queries in parallel using the SAME where clause
     const [products, totalCount] = await Promise.all([
       prisma.product.findMany({
         where,
@@ -647,24 +629,20 @@ const getPublicProducts = async (req, res) => {
       prisma.product.count({ where })
     ]);
 
-    // Filter out products that have no available variants for the country
     const filteredProducts = products.filter(product => {
       if (product.variants && product.variants.length > 0) {
-        const hasAvailableVariant = product.variants.some(variant =>
+        return product.variants.some(variant =>
           variant.country === country || variant.country === 'Global'
         );
-        return hasAvailableVariant;
       }
       return product.country === country || product.country === 'Global';
     });
 
-    // Calculate pagination metadata based on filtered products
     const totalPages = Math.ceil(filteredProducts.length / limitNum);
     const hasNextPage = pageNum < totalPages;
     const hasPrevPage = pageNum > 1;
 
-    // Prepare response
-    const response = {
+    res.json({
       success: true,
       data: {
         products: filteredProducts,
@@ -690,10 +668,7 @@ const getPublicProducts = async (req, res) => {
           sortOrder: sortDirection
         }
       }
-    };
-
-    res.json(response);
-
+    });
   } catch (error) {
     console.error('Get public products error:', error);
     res.status(500).json({
