@@ -4,13 +4,13 @@ const { processTemplateVariables } = require('../utils/templateProcessor');
 const queueAutomationEmails = async (trigger, userId, orderId, variables = {}, prisma, overrideRecipient = null) => {
   try {
     console.log(`Triggering automation: ${trigger} for user: ${userId}, order: ${orderId}`);
-    
+
     // Use passed prisma instance or create new one
     if (!prisma) {
       const { PrismaClient } = require('@prisma/client');
       prisma = new PrismaClient();
     }
-    
+
     let user = null;
     if (userId) {
       user = await prisma.user.findFirst({
@@ -88,10 +88,10 @@ const queueAutomationEmails = async (trigger, userId, orderId, variables = {}, p
 
     if (rules.length === 0) {
       console.log(`No active automation rules found for trigger: ${trigger}`);
-      return { 
-        success: true, 
-        message: 'No active automation rules found for this trigger', 
-        queued: 0 
+      return {
+        success: true,
+        message: 'No active automation rules found for this trigger',
+        queued: 0
       };
     }
 
@@ -126,7 +126,7 @@ const queueAutomationEmails = async (trigger, userId, orderId, variables = {}, p
 
       // Use override recipient if provided, otherwise use user email
       const recipientEmail = overrideRecipient || user?.email || variables.recipientEmail;
-      
+
       if (!recipientEmail) {
         console.warn(`No recipient email found for automation rule: ${rule.name}`);
         continue;
@@ -170,12 +170,12 @@ const queueAutomationEmails = async (trigger, userId, orderId, variables = {}, p
 
 const checkRuleConditions = async (conditions, context) => {
   const { user, order, variables } = context;
-  
+
   for (const condition of conditions) {
     const { field, operator, value } = condition;
-    
+
     let actualValue;
-    
+
     // Get value based on field path
     switch (field) {
       case 'user.isActive':
@@ -222,7 +222,7 @@ const checkRuleConditions = async (conditions, context) => {
         break;
     }
   }
-  
+
   return true;
 };
 
@@ -231,10 +231,10 @@ const buildDefaultVariables = async (trigger, user, order, customVariables, pris
   let shippingAddressString = '';
   if (order?.shippingAddress) {
     try {
-      const shippingAddress = typeof order.shippingAddress === 'string' 
-        ? JSON.parse(order.shippingAddress) 
+      const shippingAddress = typeof order.shippingAddress === 'string'
+        ? JSON.parse(order.shippingAddress)
         : order.shippingAddress;
-      
+
       shippingAddressString = [
         shippingAddress.streetAddress || shippingAddress.street,
         shippingAddress.city,
@@ -265,10 +265,10 @@ const buildDefaultVariables = async (trigger, user, order, customVariables, pris
 
   if (websiteSettings?.footerContactInfo) {
     try {
-      const footerContactInfo = typeof websiteSettings.footerContactInfo === 'string' 
+      const footerContactInfo = typeof websiteSettings.footerContactInfo === 'string'
         ? JSON.parse(websiteSettings.footerContactInfo)
         : websiteSettings.footerContactInfo;
-      
+
       if (footerContactInfo.phone) contactInfo.phone = footerContactInfo.phone;
       if (footerContactInfo.email) contactInfo.email = footerContactInfo.email;
     } catch (error) {
@@ -282,7 +282,7 @@ const buildDefaultVariables = async (trigger, user, order, customVariables, pris
     customer_first_name: user?.firstName || 'Customer',
     customer_email: user?.email,
     customer_phone: user?.phoneNumber,
-    
+
     // Order variables
     order_id: order?.orderNumber,
     order_date: order?.createdAt?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0],
@@ -290,7 +290,7 @@ const buildDefaultVariables = async (trigger, user, order, customVariables, pris
     order_status: order?.status,
     payment_status: order?.paymentStatus,
     payment_method: order?.paymentMethod,
-    
+
     // System variables
     current_date: new Date().toISOString().split('T')[0],
     current_year: new Date().getFullYear(),
@@ -299,23 +299,23 @@ const buildDefaultVariables = async (trigger, user, order, customVariables, pris
     support_phone: contactInfo.phone,
     website_url: process.env.FRONTEND_URL || 'https://evergreenpharma.us',
     admin_url: process.env.ADMIN_URL || process.env.FRONTEND_URL || 'https://evergreenpharma.us',
-    
+
     // Tracking URLs
-    order_tracking_url: order ? `${process.env.FRONTEND_URL}/orders/${order.id}` : '#',
-    tracking_url: order ? `${process.env.FRONTEND_URL}/orders/${order.id}` : '#',
+    order_tracking_url: order ? `${process.env.FRONTEND_URL}/account/orders/${order.id}` : '#',
+    tracking_url: order ? `${process.env.FRONTEND_URL}/account/orders/${order.id}` : '#',
     account_url: `${process.env.FRONTEND_URL}/account`,
     shop_url: `${process.env.FRONTEND_URL}/shop`,
     unsubscribe_url: `${process.env.FRONTEND_URL}/unsubscribe`,
     support_url: `${process.env.FRONTEND_URL}/contact`,
-    review_url: order ? `${process.env.FRONTEND_URL}/orders/${order.id}/review` : '#',
-    
+    review_url: order ? `${process.env.FRONTEND_URL}/account/orders/${order.id}/review` : '#',
+
     // Shipping address (from JSON field)
     shipping_address: shippingAddressString,
-    
+
     // Payment variables
     amount_paid: order?.totalAmount ? `$${order.totalAmount.toFixed(2)}` : '$0.00',
     transaction_id: order?.transactionId || 'N/A',
-    
+
     ...customVariables
   };
 
@@ -364,13 +364,13 @@ const buildDefaultVariables = async (trigger, user, order, customVariables, pris
     case 'ORDER_PROCESSING':
       variables.order_status = 'processing';
       break;
-      
+
     case 'ORDER_SHIPPED':
       variables.tracking_number = customVariables.tracking_number || order?.trackingNumber || 'N/A';
       variables.shipping_carrier = customVariables.shipping_carrier || order?.shippingMethod || 'Standard Shipping';
-      variables.estimated_delivery = customVariables.estimated_delivery || 
+      variables.estimated_delivery = customVariables.estimated_delivery ||
         (order?.estimatedDelivery ? order.estimatedDelivery.toISOString().split('T')[0] : '3-5 business days');
-      variables.tracking_link = customVariables.tracking_link || 
+      variables.tracking_link = customVariables.tracking_link ||
         (order?.trackingNumber ? `${process.env.FRONTEND_URL}/track-order/${order.trackingNumber}` : '#');
       break;
 
@@ -409,7 +409,7 @@ const buildDefaultVariables = async (trigger, user, order, customVariables, pris
 
     case 'PAYMENT_FAILED':
       variables.failure_reason = customVariables.failure_reason || 'Payment was declined';
-      variables.payment_retry_url = customVariables.payment_retry_url || 
+      variables.payment_retry_url = customVariables.payment_retry_url ||
         (order ? `${process.env.FRONTEND_URL}/orders/${order.id}/payment/retry` : '#');
       variables.payment_status = 'failed';
       break;
@@ -440,7 +440,7 @@ const buildDefaultVariables = async (trigger, user, order, customVariables, pris
       variables.updated_by = customVariables.updated_by || 'System';
       variables.update_timestamp = customVariables.update_timestamp || new Date().toLocaleString();
       variables.tracking_number = customVariables.tracking_number || order?.trackingNumber || 'N/A';
-      variables.estimated_delivery = customVariables.estimated_delivery || 
+      variables.estimated_delivery = customVariables.estimated_delivery ||
         (order?.estimatedDelivery ? order.estimatedDelivery.toISOString().split('T')[0] : 'N/A');
       variables.notes = customVariables.notes || '';
       variables.status_color = customVariables.status_color || '#6b7280';
@@ -520,7 +520,7 @@ const sendManualEmail = async (templateId, recipientEmail, variables = {}, prism
       const { PrismaClient } = require('@prisma/client');
       prisma = new PrismaClient();
     }
-    
+
     const template = await prisma.emailTemplate.findFirst({
       where: {
         id: templateId,
@@ -566,7 +566,7 @@ const getAvailableTriggers = () => {
   return {
     ORDER_STATUS: [
       'ORDER_PLACED',
-      'ORDER_PENDING', 
+      'ORDER_PENDING',
       'ORDER_CONFIRMED',
       'ORDER_PROCESSING',
       'ORDER_SHIPPED',
@@ -609,7 +609,7 @@ const getAvailableTriggers = () => {
 const getTemplateVariablesForTrigger = (trigger) => {
   const commonVariables = [
     'customer_name',
-    'customer_first_name', 
+    'customer_first_name',
     'customer_email',
     'order_id',
     'order_total',
@@ -681,8 +681,8 @@ const getTemplateVariablesForTrigger = (trigger) => {
   return [...commonVariables, ...(triggerSpecificVariables[trigger] || [])];
 };
 
-module.exports = { 
-  queueAutomationEmails, 
+module.exports = {
+  queueAutomationEmails,
   sendManualEmail,
   buildDefaultVariables,
   getAvailableTriggers,
