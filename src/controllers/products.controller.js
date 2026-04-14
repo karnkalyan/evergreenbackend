@@ -1,251 +1,247 @@
 const { processUploadedFiles, cleanupUploadedFiles, deleteFile } = require('../middlewares/upload');
-// NOTE: Make sure you import processUploadedFiles and cleanupUploadedFiles
-// from '../middlewares/upload' at the top of this file.
-// Make sure you have these functions imported at the top of your file
-// const { processUploadedFiles, cleanupUploadedFiles } = require('../middlewares/upload');
 
 const createProduct = async (req, res) => {
-    let uploadedImages = null;
-    let variantsData = []; 
-    
-    try {
-        const prisma = req.prisma;
-        const productData = req.body;
+  let uploadedImages = null;
+  let variantsData = [];
 
-        // --- 🔑 Data Type Conversion for Prisma 🔑 ---
-        const brandId = parseInt(productData.brand_id, 10);
-        const categoryId = parseInt(productData.category_id, 10);
-        const price = parseFloat(productData.price);
-        const mrp = parseFloat(productData.mrp);
-        
-        // 🆕 NEW FIELDS PARSING
-        const stock = parseInt(productData.stock, 10) || 0;
-        const minOrderQuantity = parseInt(productData.min_order_quantity, 10) || 1;
-        const maxOrderQuantity = parseInt(productData.max_order_quantity, 10) || 10;
-        const weight = productData.weight ? parseFloat(productData.weight) : 0;
-        const country = productData.country || 'Global';
+  try {
+    const prisma = req.prisma;
+    const productData = req.body;
 
-        // --- 💡 Parse the 'variants' JSON string 💡 ---
-        if (productData.variants && typeof productData.variants === 'string') {
-            try {
-                variantsData = JSON.parse(productData.variants);
-                if (!Array.isArray(variantsData)) {
-                    variantsData = [];
-                }
-            } catch (parseError) {
-                console.error('Failed to parse variants JSON:', parseError);
-                return res.status(400).json({ error: 'Invalid variants JSON format.' });
-            }
-        } else if (Array.isArray(productData.variants)) {
-            variantsData = productData.variants;
+    // --- 🔑 Data Type Conversion for Prisma 🔑 ---
+    const brandId = parseInt(productData.brand_id, 10);
+    const categoryId = parseInt(productData.category_id, 10);
+    const price = parseFloat(productData.price);
+    const mrp = parseFloat(productData.mrp);
+
+    // 🆕 NEW FIELDS PARSING
+    const stock = parseInt(productData.stock, 10) || 0;
+    const minOrderQuantity = parseInt(productData.min_order_quantity, 10) || 1;
+    const maxOrderQuantity = parseInt(productData.max_order_quantity, 10) || 10;
+    const weight = productData.weight ? parseFloat(productData.weight) : 0;
+    const country = productData.country || 'Global';
+
+    // --- 💡 Parse the 'variants' JSON string 💡 ---
+    if (productData.variants && typeof productData.variants === 'string') {
+      try {
+        variantsData = JSON.parse(productData.variants);
+        if (!Array.isArray(variantsData)) {
+          variantsData = [];
         }
-
-        // Process uploaded files if any
-        if (req.files) {
-            uploadedImages = processUploadedFiles(req, 'products');
-        }
-
-        // Validate required fields
-        if (!productData.sku || !productData.name || !productData.slug || 
-            isNaN(brandId) || isNaN(categoryId) || 
-            isNaN(price) || isNaN(mrp)) {
-            
-            if (uploadedImages) {
-                cleanupUploadedFiles(uploadedImages);
-            }
-            
-            return res.status(400).json({
-                error: 'Missing or invalid required fields: sku, name, slug, brand_id, category_id, price, mrp.'
-            });
-        }
-        
-        // --- 🔍 Existence Check (SKU/Slug) ---
-        const existingProduct = await prisma.product.findFirst({
-            where: {
-                OR: [
-                    { sku: productData.sku },
-                    { slug: productData.slug }
-                ],
-                isDeleted: false
-            }
-        });
-
-        if (existingProduct) {
-            if (uploadedImages) {
-                cleanupUploadedFiles(uploadedImages);
-            }
-            return res.status(400).json({
-                error: 'Product with this SKU or Slug already exists'
-            });
-        }
-
-        // --- 📦 Validate Brand and Category ---
-        const [brand, category] = await Promise.all([
-            prisma.brand.findFirst({
-                where: { id: brandId, isDeleted: false, isActive: true }
-            }),
-            prisma.category.findFirst({
-                where: { id: categoryId, isDeleted: false, isActive: true }
-            })
-        ]);
-
-        if (!brand) {
-            if (uploadedImages) cleanupUploadedFiles(uploadedImages);
-            return res.status(400).json({ error: 'Brand not found or inactive' });
-        }
-        if (!category) {
-            if (uploadedImages) cleanupUploadedFiles(uploadedImages);
-            return res.status(400).json({ error: 'Category not found or inactive' });
-        }
-
-        // --- 🖼️ Prepare Data ---
-        const imagesData = [];
-        if (uploadedImages) {
-            if (uploadedImages.primaryImage) {
-                imagesData.push(uploadedImages.primaryImage);
-            }
-            if (uploadedImages.secondaryImages && uploadedImages.secondaryImages.length > 0) {
-                imagesData.push(...uploadedImages.secondaryImages);
-            }
-        }
-
-        const metaTitle = productData.metaTitle || 
-            `${productData.name} | ${brand.name} | Your Store`;
-
-        const metaDescription = productData.metaDescription || 
-            (productData.shortDescription ? productData.shortDescription.substring(0, 160) : null);
-
-        const searchableText = productData.searchableText || [
-            productData.name,
-            productData.shortDescription,
-            productData.tags ? JSON.stringify(productData.tags) : '',
-            productData.symptoms ? JSON.stringify(productData.symptoms) : '',
-            productData.benefits ? JSON.stringify(productData.benefits) : ''
-        ].filter(Boolean).join(' ').substring(0, 1000);
-
-        const discount_percent = productData.discount_percent !== undefined ? 
-            parseFloat(productData.discount_percent) :
-            Math.round(((mrp - price) / mrp) * 100);
-
-        // 🆕 PARSE JSON FIELDS
-        const strengths = productData.strengths ? (typeof productData.strengths === 'string' ? JSON.parse(productData.strengths) : productData.strengths) : [];
-        const forms = productData.forms ? (typeof productData.forms === 'string' ? JSON.parse(productData.forms) : productData.forms) : [];
-        const tags = productData.tags ? (typeof productData.tags === 'string' ? JSON.parse(productData.tags) : productData.tags) : [];
-        const symptoms = productData.symptoms ? (typeof productData.symptoms === 'string' ? JSON.parse(productData.symptoms) : productData.symptoms) : [];
-
-        const productCreateData = {
-            sku: productData.sku,
-            name: productData.name,
-            slug: productData.slug,
-            description: productData.description,
-            shortDescription: productData.shortDescription,
-            metaTitle,
-            metaDescription,
-            canonicalUrl: productData.canonicalUrl,
-            ogImage: uploadedImages?.ogImage?.url || productData.ogImage,
-            structuredData: productData.structuredData,
-            seoKeywords: productData.seoKeywords,
-            searchableText,
-            altText: productData.altText,
-            composition: productData.composition,
-            benefits: productData.benefits,
-            usageInstructions: productData.usageInstructions,
-            faqs: productData.faqs,
-            ingredients: productData.ingredients,
-            specifications: productData.specifications,
-            strengths: strengths,
-            forms: forms,
-            images: imagesData.length > 0 ? imagesData : (productData.images ? (typeof productData.images === 'string' ? JSON.parse(productData.images) : productData.images) : []),
-            tags: tags,
-            symptoms: symptoms,
-            price: price,
-            mrp: mrp,
-            discount_percent,
-            prescription_required: productData.prescription_required === 'true' || productData.prescription_required === true,
-            isFeatured: productData.isFeatured === 'true' || productData.isFeatured === true,
-            isTrending: productData.isTrending === 'true' || productData.isTrending === true,
-            isActive: productData.isActive === 'true' || productData.isActive === true,
-            
-            // 🆕 NEW FIELDS
-            country: country,
-            stock: stock,
-            min_order_quantity: minOrderQuantity,
-            max_order_quantity: maxOrderQuantity,
-            weight: weight,
-            dimensions: productData.dimensions || '',
-            
-            brand_id: brandId,
-            category_id: categoryId,
-            lastSeoUpdate: (productData.metaTitle || productData.metaDescription || productData.seoKeywords) ? 
-                new Date() : null
-        };
-
-        // --- 💾 Prisma Create Operation ---
-        const product = await prisma.product.create({
-            data: {
-                ...productCreateData,
-                variants: variantsData.length > 0 ? {
-                    create: variantsData.map(variant => ({
-                        country: variant.country,
-                        shipping: variant.shipping,
-                        currency: variant.currency,
-                        options: {
-                            create: variant.options.map(option => ({
-                                label: option.label,
-                                price: parseFloat(option.price),
-                                mrp: parseFloat(option.mrp),
-                                stock: parseInt(option.stock, 10),
-                                sku: option.sku,
-                                weight: option.weight ? parseFloat(option.weight) : null,
-                                dimensions: option.dimensions
-                            }))
-                        }
-                    }))
-                } : undefined
-            },
-            include: {
-                brand: {
-                    select: { id: true, name: true, logo: true, slug: true }
-                },
-                category: {
-                    select: { id: true, name: true, slug: true, catLogo: true }
-                },
-                variants: {
-                    include: { options: true }
-                }
-            }
-        });
-
-        // --- ✅ Success Response ---
-        res.status(201).json({
-            message: 'Product created successfully',
-            product
-        });
-
-    } catch (error) {
-        console.error('Create product error:', error);
-        
-        if (uploadedImages) {
-            cleanupUploadedFiles(uploadedImages);
-        }
-        
-        if (error.code === 'P2002') {
-            return res.status(400).json({
-                error: 'Unique constraint violation - SKU or Slug already exists'
-            });
-        }
-        
-        res.status(500).json({
-            error: 'Failed to create product',
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
+      } catch (parseError) {
+        console.error('Failed to parse variants JSON:', parseError);
+        return res.status(400).json({ error: 'Invalid variants JSON format.' });
+      }
+    } else if (Array.isArray(productData.variants)) {
+      variantsData = productData.variants;
     }
+
+    // Process uploaded files if any
+    if (req.files) {
+      uploadedImages = processUploadedFiles(req, 'products');
+    }
+
+    // Validate required fields
+    if (!productData.sku || !productData.name || !productData.slug ||
+      isNaN(brandId) || isNaN(categoryId) ||
+      isNaN(price) || isNaN(mrp)) {
+
+      if (uploadedImages) {
+        cleanupUploadedFiles(uploadedImages);
+      }
+
+      return res.status(400).json({
+        error: 'Missing or invalid required fields: sku, name, slug, brand_id, category_id, price, mrp.'
+      });
+    }
+
+    // --- 🔍 Existence Check (SKU/Slug) ---
+    const existingProduct = await prisma.product.findFirst({
+      where: {
+        OR: [
+          { sku: productData.sku },
+          { slug: productData.slug }
+        ],
+        isDeleted: false
+      }
+    });
+
+    if (existingProduct) {
+      if (uploadedImages) {
+        cleanupUploadedFiles(uploadedImages);
+      }
+      return res.status(400).json({
+        error: 'Product with this SKU or Slug already exists'
+      });
+    }
+
+    // --- 📦 Validate Brand and Category ---
+    const [brand, category] = await Promise.all([
+      prisma.brand.findFirst({
+        where: { id: brandId, isDeleted: false, isActive: true }
+      }),
+      prisma.category.findFirst({
+        where: { id: categoryId, isDeleted: false, isActive: true }
+      })
+    ]);
+
+    if (!brand) {
+      if (uploadedImages) cleanupUploadedFiles(uploadedImages);
+      return res.status(400).json({ error: 'Brand not found or inactive' });
+    }
+    if (!category) {
+      if (uploadedImages) cleanupUploadedFiles(uploadedImages);
+      return res.status(400).json({ error: 'Category not found or inactive' });
+    }
+
+    // --- 🖼️ Prepare Data ---
+    const imagesData = [];
+    if (uploadedImages) {
+      if (uploadedImages.primaryImage) {
+        imagesData.push(uploadedImages.primaryImage);
+      }
+      if (uploadedImages.secondaryImages && uploadedImages.secondaryImages.length > 0) {
+        imagesData.push(...uploadedImages.secondaryImages);
+      }
+    }
+
+    const metaTitle = productData.metaTitle ||
+      `${productData.name} | ${brand.name} | Your Store`;
+
+    const metaDescription = productData.metaDescription ||
+      (productData.shortDescription ? productData.shortDescription.substring(0, 160) : null);
+
+    const searchableText = productData.searchableText || [
+      productData.name,
+      productData.shortDescription,
+      productData.tags ? JSON.stringify(productData.tags) : '',
+      productData.symptoms ? JSON.stringify(productData.symptoms) : '',
+      productData.benefits ? JSON.stringify(productData.benefits) : ''
+    ].filter(Boolean).join(' ').substring(0, 1000);
+
+    const discount_percent = productData.discount_percent !== undefined ?
+      parseFloat(productData.discount_percent) :
+      Math.round(((mrp - price) / mrp) * 100);
+
+    // 🆕 PARSE JSON FIELDS
+    const strengths = productData.strengths ? (typeof productData.strengths === 'string' ? JSON.parse(productData.strengths) : productData.strengths) : [];
+    const forms = productData.forms ? (typeof productData.forms === 'string' ? JSON.parse(productData.forms) : productData.forms) : [];
+    const tags = productData.tags ? (typeof productData.tags === 'string' ? JSON.parse(productData.tags) : productData.tags) : [];
+    const symptoms = productData.symptoms ? (typeof productData.symptoms === 'string' ? JSON.parse(productData.symptoms) : productData.symptoms) : [];
+
+    const productCreateData = {
+      sku: productData.sku,
+      name: productData.name,
+      slug: productData.slug,
+      description: productData.description,
+      shortDescription: productData.shortDescription,
+      metaTitle,
+      metaDescription,
+      canonicalUrl: productData.canonicalUrl,
+      ogImage: uploadedImages?.ogImage?.url || productData.ogImage,
+      structuredData: productData.structuredData,
+      seoKeywords: productData.seoKeywords,
+      searchableText,
+      altText: productData.altText,
+      composition: productData.composition,
+      benefits: productData.benefits,
+      usageInstructions: productData.usageInstructions,
+      faqs: productData.faqs,
+      ingredients: productData.ingredients,
+      specifications: productData.specifications,
+      strengths: strengths,
+      forms: forms,
+      images: imagesData.length > 0 ? imagesData : (productData.images ? (typeof productData.images === 'string' ? JSON.parse(productData.images) : productData.images) : []),
+      tags: tags,
+      symptoms: symptoms,
+      price: price,
+      mrp: mrp,
+      discount_percent,
+      prescription_required: productData.prescription_required === 'true' || productData.prescription_required === true,
+      isFeatured: productData.isFeatured === 'true' || productData.isFeatured === true,
+      isTrending: productData.isTrending === 'true' || productData.isTrending === true,
+      isActive: productData.isActive === 'true' || productData.isActive === true,
+
+      // 🆕 NEW FIELDS
+      country: country,
+      stock: stock,
+      min_order_quantity: minOrderQuantity,
+      max_order_quantity: maxOrderQuantity,
+      weight: weight,
+      dimensions: productData.dimensions || '',
+
+      brand_id: brandId,
+      category_id: categoryId,
+      lastSeoUpdate: (productData.metaTitle || productData.metaDescription || productData.seoKeywords) ?
+        new Date() : null
+    };
+
+    // --- 💾 Prisma Create Operation ---
+    const product = await prisma.product.create({
+      data: {
+        ...productCreateData,
+        variants: variantsData.length > 0 ? {
+          create: variantsData.map(variant => ({
+            country: variant.country,
+            shipping: variant.shipping,
+            currency: variant.currency,
+            options: {
+              create: variant.options.map(option => ({
+                label: option.label,
+                price: parseFloat(option.price),
+                mrp: parseFloat(option.mrp),
+                stock: parseInt(option.stock, 10),
+                sku: option.sku,
+                weight: option.weight ? parseFloat(option.weight) : null,
+                dimensions: option.dimensions
+              }))
+            }
+          }))
+        } : undefined
+      },
+      include: {
+        brand: {
+          select: { id: true, name: true, logo: true, slug: true }
+        },
+        category: {
+          select: { id: true, name: true, slug: true, catLogo: true }
+        },
+        variants: {
+          include: { options: true }
+        }
+      }
+    });
+
+    // --- ✅ Success Response ---
+    res.status(201).json({
+      message: 'Product created successfully',
+      product
+    });
+
+  } catch (error) {
+    console.error('Create product error:', error);
+
+    if (uploadedImages) {
+      cleanupUploadedFiles(uploadedImages);
+    }
+
+    if (error.code === 'P2002') {
+      return res.status(400).json({
+        error: 'Unique constraint violation - SKU or Slug already exists'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Failed to create product',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
 };
 
 const getAllProducts = async (req, res) => {
   try {
     const prisma = req.prisma;
-    
+
     // Extract query parameters
     const {
       page = 1,
@@ -320,9 +316,6 @@ const getAllProducts = async (req, res) => {
       where.isActive = isActive === 'true' || isActive === true;
     }
 
-    // 🚨 REMOVED: Country filter for admin panel
-    // Admin should see ALL products regardless of country
-
     // Validate and parse pagination parameters
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
@@ -331,13 +324,12 @@ const getAllProducts = async (req, res) => {
     // Validate sort parameters
     const validSortFields = ['name', 'price', 'createdAt', 'updatedAt', 'views', 'stock', 'rating', 'country'];
     const validSortOrders = ['asc', 'desc'];
-    
+
     const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
     const sortDirection = validSortOrders.includes(sortOrder) ? sortOrder : 'desc';
 
     // Execute queries in parallel for better performance
     const [products, totalCount] = await Promise.all([
-      // Get products with pagination and filters
       prisma.product.findMany({
         where,
         include: {
@@ -369,7 +361,6 @@ const getAllProducts = async (req, res) => {
             }
           },
           variants: {
-            // 🚨 REMOVED: country filtering from variants for admin
             where: { isDeleted: false, isActive: true },
             include: {
               options: {
@@ -393,8 +384,6 @@ const getAllProducts = async (req, res) => {
         take: limitNum,
         orderBy: { [sortField]: sortDirection }
       }),
-
-      // Get total count for pagination
       prisma.product.count({ where })
     ]);
 
@@ -440,7 +429,6 @@ const getAllProducts = async (req, res) => {
           search: search || null,
           category: category || null,
           brand: brand || null,
-          // 🚨 REMOVED: country from filters for admin panel
           minPrice: minPrice ? parseFloat(minPrice) : null,
           maxPrice: maxPrice ? parseFloat(maxPrice) : null,
           inStock: inStock !== undefined ? (inStock === 'true' || inStock === true) : null,
@@ -466,7 +454,7 @@ const getAllProducts = async (req, res) => {
 const getPublicProducts = async (req, res) => {
   try {
     const prisma = req.prisma;
-    
+
     // Extract query parameters
     const {
       page = 1,
@@ -496,11 +484,11 @@ const getPublicProducts = async (req, res) => {
       }
     };
 
-    // 🆕 UPDATED: Country filtering without mode for count
+    // 🆕 UPDATED: Country filtering using exact matches (no mode)
     if (country && country !== 'all') {
       where.OR = [
         { country: 'Global' },
-        { country: country }, // Remove mode for count compatibility
+        { country: country },
         {
           variants: {
             some: {
@@ -570,34 +558,14 @@ const getPublicProducts = async (req, res) => {
     // Validate sort parameters
     const validSortFields = ['name', 'price', 'createdAt', 'updatedAt', 'views', 'stock', 'rating'];
     const validSortOrders = ['asc', 'desc'];
-    
+
     const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
     const sortDirection = validSortOrders.includes(sortOrder) ? sortOrder : 'desc';
 
-    // Build separate where clause for findMany (with mode) and count (without mode)
-    const whereForFindMany = JSON.parse(JSON.stringify(where));
-    
-    // Add mode for findMany where needed
-    if (country && country !== 'all' && whereForFindMany.OR) {
-      whereForFindMany.OR = whereForFindMany.OR.map(condition => {
-        if (condition.country && condition.country.equals) {
-          return {
-            ...condition,
-            country: {
-              equals: condition.country.equals,
-              mode: 'insensitive'
-            }
-          };
-        }
-        return condition;
-      });
-    }
-
     // Execute queries in parallel for better performance
     const [products, totalCount] = await Promise.all([
-      // Get products with pagination and filters (with mode)
       prisma.product.findMany({
-        where: whereForFindMany,
+        where,
         select: {
           id: true,
           sku: true,
@@ -657,10 +625,9 @@ const getPublicProducts = async (req, res) => {
             }
           },
           variants: {
-            where: { 
-              isDeleted: false, 
+            where: {
+              isDeleted: false,
               isActive: true,
-              // Filter variants by country as well
               OR: [
                 { country: 'Global' },
                 { country: country && country !== 'all' ? country : undefined }
@@ -677,21 +644,17 @@ const getPublicProducts = async (req, res) => {
         take: limitNum,
         orderBy: { [sortField]: sortDirection }
       }),
-
-      // Get total count for pagination (without mode)
       prisma.product.count({ where })
     ]);
 
     // 🆕 Filter out products that have no available variants for the country
     const filteredProducts = products.filter(product => {
-      // If product has variants, check if any variant is available for the country
       if (product.variants && product.variants.length > 0) {
-        const hasAvailableVariant = product.variants.some(variant => 
+        const hasAvailableVariant = product.variants.some(variant =>
           variant.country === country || variant.country === 'Global'
         );
         return hasAvailableVariant;
       }
-      // If product has no variants, check product's country
       return product.country === country || product.country === 'Global';
     });
 
@@ -754,7 +717,6 @@ const getProductById = async (req, res) => {
       where: {
         id: Number(id),
         isDeleted: false
-        // 🚨 REMOVED: country filtering for admin panel
       },
       select: {
         id: true,
@@ -795,7 +757,6 @@ const getProductById = async (req, res) => {
         clickThroughRate: true,
         searchImpressions: true,
         lastSeoUpdate: true,
-        // 🆕 INCLUDING ALL NEW FIELDS
         country: true,
         stock: true,
         min_order_quantity: true,
@@ -832,7 +793,6 @@ const getProductById = async (req, res) => {
           }
         },
         variants: {
-          // 🚨 REMOVED: country filtering from variants for admin
           where: { isDeleted: false, isActive: true },
           include: {
             options: {
@@ -873,13 +833,11 @@ const getProductById = async (req, res) => {
       });
     }
 
-    // 🚨 REMOVED: country availability check for admin panel
-
     // Increment views and update search impressions only for active products
     if (product.isActive) {
       await prisma.product.update({
         where: { id: Number(id) },
-        data: { 
+        data: {
           views: { increment: 1 },
           searchImpressions: { increment: 1 }
         }
@@ -987,9 +945,8 @@ const getProductBySlug = async (req, res) => {
           }
         },
 
-        // FIXED: return EXACT same variants as admin
         variants: {
-          where: { isDeleted: false }, // do NOT filter active/country
+          where: { isDeleted: false },
           include: {
             options: {
               where: { isDeleted: false }
@@ -1018,7 +975,7 @@ const getProductBySlug = async (req, res) => {
     // Update counters (optional)
     await prisma.product.update({
       where: { id: product.id },
-      data: { 
+      data: {
         views: { increment: 1 },
         searchImpressions: { increment: 1 }
       }
@@ -1032,7 +989,6 @@ const getProductBySlug = async (req, res) => {
   }
 };
 
-
 // 🆕 NEW: Admin-specific function without country filtering
 const getProductBySlugForAdmin = async (req, res) => {
   try {
@@ -1043,7 +999,6 @@ const getProductBySlugForAdmin = async (req, res) => {
       where: {
         slug: slug,
         isDeleted: false
-        // 🚨 No country filtering for admin
       },
       select: {
         id: true,
@@ -1120,7 +1075,6 @@ const getProductBySlugForAdmin = async (req, res) => {
           }
         },
         variants: {
-          // 🚨 No country filtering for variants in admin
           where: { isDeleted: false, isActive: true },
           include: {
             options: {
@@ -1157,268 +1111,267 @@ const getProductBySlugForAdmin = async (req, res) => {
   }
 };
 
-
 const updateProduct = async (req, res) => {
-    let uploadedImages = null;
-    let variantsData = [];
+  let uploadedImages = null;
+  let variantsData = [];
 
-    try {
-        const prisma = req.prisma;
-        const productId = parseInt(req.params.id, 10);
-        const productData = req.body;
+  try {
+    const prisma = req.prisma;
+    const productId = parseInt(req.params.id, 10);
+    const productData = req.body;
 
-        if (isNaN(productId)) {
-            return res.status(400).json({ error: 'Invalid product ID' });
-        }
-
-        // Parse variants JSON if sent as string
-        if (productData.variants && typeof productData.variants === 'string') {
-            try {
-                variantsData = JSON.parse(productData.variants);
-                if (!Array.isArray(variantsData)) variantsData = [];
-            } catch (err) {
-                return res.status(400).json({ error: 'Invalid variants JSON format.' });
-            }
-        } else if (Array.isArray(productData.variants)) {
-            variantsData = productData.variants;
-        }
-
-        // Handle uploaded images
-        if (req.files) {
-            uploadedImages = processUploadedFiles(req, 'products');
-        }
-
-        // Parse numeric fields
-        const brandId = parseInt(productData.brand_id, 10);
-        const categoryId = parseInt(productData.category_id, 10);
-        const price = parseFloat(productData.price);
-        const mrp = parseFloat(productData.mrp);
-        
-        // 🆕 PARSE NEW FIELDS
-        const stock = parseInt(productData.stock, 10) || 0;
-        const minOrderQuantity = parseInt(productData.min_order_quantity, 10) || 1;
-        const maxOrderQuantity = parseInt(productData.max_order_quantity, 10) || 10;
-        const weight = productData.weight ? parseFloat(productData.weight) : 0;
-        const country = productData.country || 'Global';
-
-        // Ensure the product exists first
-        const existing = await prisma.product.findUnique({
-            where: { id: productId, isDeleted: false },
-            include: { variants: { include: { options: true } } }
-        });
-        if (!existing) {
-            if (uploadedImages) cleanupUploadedFiles(uploadedImages);
-            return res.status(404).json({ error: 'Product not found' });
-        }
-
-        // Validate brand and category
-        const [brand, category] = await Promise.all([
-            prisma.brand.findFirst({
-                where: { id: brandId, isDeleted: false, isActive: true }
-            }),
-            prisma.category.findFirst({
-                where: { id: categoryId, isDeleted: false, isActive: true }
-            })
-        ]);
-        if (!brand || !category) {
-            if (uploadedImages) cleanupUploadedFiles(uploadedImages);
-            return res.status(400).json({ error: 'Invalid or inactive brand/category' });
-        }
-
-        // --- Image Handling Logic ---
-        let updatedImages = [...(existing.images || [])];
-
-        // Helper: normalize URL for comparison (strip base URL, keep only path)
-        const normalizeUrl = (url) => {
-            if (!url) return '';
-            try {
-                // If it's a full URL, extract just the pathname
-                const parsed = new URL(url);
-                return parsed.pathname;
-            } catch (e) {
-                // It's already a relative path
-                return url.startsWith('/') ? url : `/${url}`;
-            }
-        };
-
-        // Parse imagesToRemove from frontend if provided
-        let imagesToRemove = [];
-        if (productData.imagesToRemove && typeof productData.imagesToRemove === 'string') {
-            try {
-                imagesToRemove = JSON.parse(productData.imagesToRemove);
-            } catch (err) {
-                console.warn('Failed to parse imagesToRemove, ignoring:', err);
-            }
-        }
-
-        // Normalize the URLs to remove for comparison
-        const normalizedImagesToRemove = imagesToRemove.map(url => normalizeUrl(url));
-        console.log('📋 Images to remove (normalized):', normalizedImagesToRemove);
-        console.log('📋 Existing images:', updatedImages.map(img => img.url));
-
-        // Remove images marked for deletion AND delete files from disk
-        if (normalizedImagesToRemove.length > 0) {
-            // Find the image objects that match the URLs to be removed
-            const imagesToDelete = updatedImages.filter(img => 
-                normalizedImagesToRemove.includes(normalizeUrl(img.url))
-            );
-            
-            console.log(`🗑️ Found ${imagesToDelete.length} images to delete from ${normalizedImagesToRemove.length} requested`);
-            
-            // Delete actual files from disk
-            for (const img of imagesToDelete) {
-                const filePath = img.url || img.path;
-                if (filePath) {
-                    const deleted = deleteFile(filePath);
-                    console.log(`🗑️ Deleted image file: ${filePath} -> ${deleted ? 'SUCCESS' : 'NOT FOUND/FAILED'}`);
-                }
-            }
-            
-            // Remove from the images array
-            updatedImages = updatedImages.filter(img => 
-                !normalizedImagesToRemove.includes(normalizeUrl(img.url))
-            );
-        }
-
-        // Handle new uploaded images
-        if (uploadedImages) {
-            if (uploadedImages.primaryImage) {
-                // Add new primary image to the beginning
-                updatedImages.unshift(uploadedImages.primaryImage);
-            }
-
-            if (uploadedImages.secondaryImages && uploadedImages.secondaryImages.length > 0) {
-                updatedImages.push(...uploadedImages.secondaryImages);
-            }
-        }
-
-        // ALWAYS ensure correct isPrimary flags: first image = primary, rest = not primary
-        updatedImages = updatedImages.map((img, index) => ({
-            ...img,
-            isPrimary: index === 0
-        }));
-        
-        console.log(`📸 Final images array (${updatedImages.length}):`, updatedImages.map((img, i) => `${i}: ${img.url} (primary: ${img.isPrimary})`));
-
-        const metaTitle = productData.metaTitle || `${productData.name} | ${brand.name} | Your Store`;
-        const metaDescription = productData.metaDescription || (productData.shortDescription?.substring(0, 160) || '');
-        const searchableText = [
-            productData.name,
-            productData.shortDescription,
-            productData.tags ? JSON.stringify(productData.tags) : '',
-            productData.symptoms ? JSON.stringify(productData.symptoms) : '',
-            productData.benefits ? JSON.stringify(productData.benefits) : ''
-        ].filter(Boolean).join(' ').substring(0, 1000);
-        const discount_percent = productData.discount_percent
-            ? parseFloat(productData.discount_percent)
-            : Math.round(((mrp - price) / mrp) * 100);
-
-        // 🆕 PARSE JSON FIELDS
-        const strengths = productData.strengths ? (typeof productData.strengths === 'string' ? JSON.parse(productData.strengths) : productData.strengths) : existing.strengths;
-        const forms = productData.forms ? (typeof productData.forms === 'string' ? JSON.parse(productData.forms) : productData.forms) : existing.forms;
-        const tags = productData.tags ? (typeof productData.tags === 'string' ? JSON.parse(productData.tags) : productData.tags) : existing.tags;
-        const symptoms = productData.symptoms ? (typeof productData.symptoms === 'string' ? JSON.parse(productData.symptoms) : productData.symptoms) : existing.symptoms;
-
-        // --- Build base update data ---
-        const dataToUpdate = {
-            sku: productData.sku,
-            name: productData.name,
-            slug: productData.slug,
-            description: productData.description,
-            shortDescription: productData.shortDescription,
-            metaTitle,
-            metaDescription,
-            canonicalUrl: productData.canonicalUrl,
-            ogImage: uploadedImages?.ogImage?.url || productData.ogImage || existing.ogImage,
-            structuredData: productData.structuredData,
-            seoKeywords: productData.seoKeywords,
-            searchableText,
-            altText: productData.altText,
-            composition: productData.composition,
-            benefits: productData.benefits,
-            usageInstructions: productData.usageInstructions,
-            faqs: productData.faqs,
-            ingredients: productData.ingredients,
-            specifications: productData.specifications,
-            strengths: strengths,
-            forms: forms,
-            images: updatedImages,
-            tags: tags,
-            symptoms: symptoms,
-            price,
-            mrp,
-            discount_percent,
-            prescription_required: productData.prescription_required === 'true' || productData.prescription_required === true,
-            isFeatured: productData.isFeatured === 'true' || productData.isFeatured === true,
-            isTrending: productData.isTrending === 'true' || productData.isTrending === true,
-            isActive: productData.isActive === 'true' || productData.isActive === true,
-            
-            // 🆕 NEW FIELDS
-            country: country,
-            stock: stock,
-            min_order_quantity: minOrderQuantity,
-            max_order_quantity: maxOrderQuantity,
-            weight: weight,
-            dimensions: productData.dimensions || existing.dimensions,
-            
-            brand_id: brandId,
-            category_id: categoryId,
-            lastSeoUpdate: (productData.metaTitle || productData.metaDescription || productData.seoKeywords)
-                ? new Date()
-                : existing.lastSeoUpdate
-        };
-
-        // --- Handle Variants + Options ---
-        if (variantsData.length > 0) {
-            dataToUpdate.variants = {
-                deleteMany: {},
-                create: variantsData.map(variant => ({
-                    country: variant.country,
-                    shipping: variant.shipping,
-                    currency: variant.currency,
-                    isActive: variant.isActive ?? true,
-                    isDeleted: false,
-                    options: {
-                        create: (variant.options || []).map(option => ({
-                            label: option.label,
-                            price: parseFloat(option.price),
-                            mrp: parseFloat(option.mrp),
-                            stock: parseInt(option.stock, 10),
-                            sku: option.sku,
-                            weight: option.weight ? parseFloat(option.weight) : null,
-                            dimensions: option.dimensions || null,
-                            isActive: option.isActive ?? true,
-                            isDeleted: false
-                        }))
-                    }
-                }))
-            };
-        }
-
-        // --- Update in Prisma ---
-        const updated = await prisma.product.update({
-            where: { id: productId },
-            data: dataToUpdate,
-            include: {
-                brand: { select: { id: true, name: true, logo: true, slug: true } },
-                category: { select: { id: true, name: true, slug: true, catLogo: true } },
-                variants: { include: { options: true } }
-            }
-        });
-
-        return res.status(200).json({
-            message: 'Product updated successfully',
-            product: updated
-        });
-
-    } catch (error) {
-        console.error('Update product error:', error);
-        if (uploadedImages) cleanupUploadedFiles(uploadedImages);
-        res.status(500).json({
-            error: 'Failed to update product',
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
+    if (isNaN(productId)) {
+      return res.status(400).json({ error: 'Invalid product ID' });
     }
+
+    // Parse variants JSON if sent as string
+    if (productData.variants && typeof productData.variants === 'string') {
+      try {
+        variantsData = JSON.parse(productData.variants);
+        if (!Array.isArray(variantsData)) variantsData = [];
+      } catch (err) {
+        return res.status(400).json({ error: 'Invalid variants JSON format.' });
+      }
+    } else if (Array.isArray(productData.variants)) {
+      variantsData = productData.variants;
+    }
+
+    // Handle uploaded images
+    if (req.files) {
+      uploadedImages = processUploadedFiles(req, 'products');
+    }
+
+    // Parse numeric fields
+    const brandId = parseInt(productData.brand_id, 10);
+    const categoryId = parseInt(productData.category_id, 10);
+    const price = parseFloat(productData.price);
+    const mrp = parseFloat(productData.mrp);
+
+    // 🆕 PARSE NEW FIELDS
+    const stock = parseInt(productData.stock, 10) || 0;
+    const minOrderQuantity = parseInt(productData.min_order_quantity, 10) || 1;
+    const maxOrderQuantity = parseInt(productData.max_order_quantity, 10) || 10;
+    const weight = productData.weight ? parseFloat(productData.weight) : 0;
+    const country = productData.country || 'Global';
+
+    // Ensure the product exists first
+    const existing = await prisma.product.findUnique({
+      where: { id: productId, isDeleted: false },
+      include: { variants: { include: { options: true } } }
+    });
+    if (!existing) {
+      if (uploadedImages) cleanupUploadedFiles(uploadedImages);
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    // Validate brand and category
+    const [brand, category] = await Promise.all([
+      prisma.brand.findFirst({
+        where: { id: brandId, isDeleted: false, isActive: true }
+      }),
+      prisma.category.findFirst({
+        where: { id: categoryId, isDeleted: false, isActive: true }
+      })
+    ]);
+    if (!brand || !category) {
+      if (uploadedImages) cleanupUploadedFiles(uploadedImages);
+      return res.status(400).json({ error: 'Invalid or inactive brand/category' });
+    }
+
+    // --- Image Handling Logic ---
+    let updatedImages = [...(existing.images || [])];
+
+    // Helper: normalize URL for comparison (strip base URL, keep only path)
+    const normalizeUrl = (url) => {
+      if (!url) return '';
+      try {
+        // If it's a full URL, extract just the pathname
+        const parsed = new URL(url);
+        return parsed.pathname;
+      } catch (e) {
+        // It's already a relative path
+        return url.startsWith('/') ? url : `/${url}`;
+      }
+    };
+
+    // Parse imagesToRemove from frontend if provided
+    let imagesToRemove = [];
+    if (productData.imagesToRemove && typeof productData.imagesToRemove === 'string') {
+      try {
+        imagesToRemove = JSON.parse(productData.imagesToRemove);
+      } catch (err) {
+        console.warn('Failed to parse imagesToRemove, ignoring:', err);
+      }
+    }
+
+    // Normalize the URLs to remove for comparison
+    const normalizedImagesToRemove = imagesToRemove.map(url => normalizeUrl(url));
+    console.log('📋 Images to remove (normalized):', normalizedImagesToRemove);
+    console.log('📋 Existing images:', updatedImages.map(img => img.url));
+
+    // Remove images marked for deletion AND delete files from disk
+    if (normalizedImagesToRemove.length > 0) {
+      // Find the image objects that match the URLs to be removed
+      const imagesToDelete = updatedImages.filter(img =>
+        normalizedImagesToRemove.includes(normalizeUrl(img.url))
+      );
+
+      console.log(`🗑️ Found ${imagesToDelete.length} images to delete from ${normalizedImagesToRemove.length} requested`);
+
+      // Delete actual files from disk
+      for (const img of imagesToDelete) {
+        const filePath = img.url || img.path;
+        if (filePath) {
+          const deleted = deleteFile(filePath);
+          console.log(`🗑️ Deleted image file: ${filePath} -> ${deleted ? 'SUCCESS' : 'NOT FOUND/FAILED'}`);
+        }
+      }
+
+      // Remove from the images array
+      updatedImages = updatedImages.filter(img =>
+        !normalizedImagesToRemove.includes(normalizeUrl(img.url))
+      );
+    }
+
+    // Handle new uploaded images
+    if (uploadedImages) {
+      if (uploadedImages.primaryImage) {
+        // Add new primary image to the beginning
+        updatedImages.unshift(uploadedImages.primaryImage);
+      }
+
+      if (uploadedImages.secondaryImages && uploadedImages.secondaryImages.length > 0) {
+        updatedImages.push(...uploadedImages.secondaryImages);
+      }
+    }
+
+    // ALWAYS ensure correct isPrimary flags: first image = primary, rest = not primary
+    updatedImages = updatedImages.map((img, index) => ({
+      ...img,
+      isPrimary: index === 0
+    }));
+
+    console.log(`📸 Final images array (${updatedImages.length}):`, updatedImages.map((img, i) => `${i}: ${img.url} (primary: ${img.isPrimary})`));
+
+    const metaTitle = productData.metaTitle || `${productData.name} | ${brand.name} | Your Store`;
+    const metaDescription = productData.metaDescription || (productData.shortDescription?.substring(0, 160) || '');
+    const searchableText = [
+      productData.name,
+      productData.shortDescription,
+      productData.tags ? JSON.stringify(productData.tags) : '',
+      productData.symptoms ? JSON.stringify(productData.symptoms) : '',
+      productData.benefits ? JSON.stringify(productData.benefits) : ''
+    ].filter(Boolean).join(' ').substring(0, 1000);
+    const discount_percent = productData.discount_percent
+      ? parseFloat(productData.discount_percent)
+      : Math.round(((mrp - price) / mrp) * 100);
+
+    // 🆕 PARSE JSON FIELDS
+    const strengths = productData.strengths ? (typeof productData.strengths === 'string' ? JSON.parse(productData.strengths) : productData.strengths) : existing.strengths;
+    const forms = productData.forms ? (typeof productData.forms === 'string' ? JSON.parse(productData.forms) : productData.forms) : existing.forms;
+    const tags = productData.tags ? (typeof productData.tags === 'string' ? JSON.parse(productData.tags) : productData.tags) : existing.tags;
+    const symptoms = productData.symptoms ? (typeof productData.symptoms === 'string' ? JSON.parse(productData.symptoms) : productData.symptoms) : existing.symptoms;
+
+    // --- Build base update data ---
+    const dataToUpdate = {
+      sku: productData.sku,
+      name: productData.name,
+      slug: productData.slug,
+      description: productData.description,
+      shortDescription: productData.shortDescription,
+      metaTitle,
+      metaDescription,
+      canonicalUrl: productData.canonicalUrl,
+      ogImage: uploadedImages?.ogImage?.url || productData.ogImage || existing.ogImage,
+      structuredData: productData.structuredData,
+      seoKeywords: productData.seoKeywords,
+      searchableText,
+      altText: productData.altText,
+      composition: productData.composition,
+      benefits: productData.benefits,
+      usageInstructions: productData.usageInstructions,
+      faqs: productData.faqs,
+      ingredients: productData.ingredients,
+      specifications: productData.specifications,
+      strengths: strengths,
+      forms: forms,
+      images: updatedImages,
+      tags: tags,
+      symptoms: symptoms,
+      price,
+      mrp,
+      discount_percent,
+      prescription_required: productData.prescription_required === 'true' || productData.prescription_required === true,
+      isFeatured: productData.isFeatured === 'true' || productData.isFeatured === true,
+      isTrending: productData.isTrending === 'true' || productData.isTrending === true,
+      isActive: productData.isActive === 'true' || productData.isActive === true,
+
+      // 🆕 NEW FIELDS
+      country: country,
+      stock: stock,
+      min_order_quantity: minOrderQuantity,
+      max_order_quantity: maxOrderQuantity,
+      weight: weight,
+      dimensions: productData.dimensions || existing.dimensions,
+
+      brand_id: brandId,
+      category_id: categoryId,
+      lastSeoUpdate: (productData.metaTitle || productData.metaDescription || productData.seoKeywords)
+        ? new Date()
+        : existing.lastSeoUpdate
+    };
+
+    // --- Handle Variants + Options ---
+    if (variantsData.length > 0) {
+      dataToUpdate.variants = {
+        deleteMany: {},
+        create: variantsData.map(variant => ({
+          country: variant.country,
+          shipping: variant.shipping,
+          currency: variant.currency,
+          isActive: variant.isActive ?? true,
+          isDeleted: false,
+          options: {
+            create: (variant.options || []).map(option => ({
+              label: option.label,
+              price: parseFloat(option.price),
+              mrp: parseFloat(option.mrp),
+              stock: parseInt(option.stock, 10),
+              sku: option.sku,
+              weight: option.weight ? parseFloat(option.weight) : null,
+              dimensions: option.dimensions || null,
+              isActive: option.isActive ?? true,
+              isDeleted: false
+            }))
+          }
+        }))
+      };
+    }
+
+    // --- Update in Prisma ---
+    const updated = await prisma.product.update({
+      where: { id: productId },
+      data: dataToUpdate,
+      include: {
+        brand: { select: { id: true, name: true, logo: true, slug: true } },
+        category: { select: { id: true, name: true, slug: true, catLogo: true } },
+        variants: { include: { options: true } }
+      }
+    });
+
+    return res.status(200).json({
+      message: 'Product updated successfully',
+      product: updated
+    });
+
+  } catch (error) {
+    console.error('Update product error:', error);
+    if (uploadedImages) cleanupUploadedFiles(uploadedImages);
+    res.status(500).json({
+      error: 'Failed to update product',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
 };
 
 const deleteProduct = async (req, res) => {
@@ -1459,7 +1412,7 @@ const deleteProduct = async (req, res) => {
       // Soft delete product
       await tx.product.update({
         where: { id: Number(id) },
-        data: { 
+        data: {
           isDeleted: true,
           isActive: false,
           sku: `deleted_${product.sku}_${Date.now()}`,
@@ -1470,9 +1423,9 @@ const deleteProduct = async (req, res) => {
       // Soft delete variants
       await tx.productVariant.updateMany({
         where: { product_id: Number(id) },
-        data: { 
+        data: {
           isDeleted: true,
-          isActive: false 
+          isActive: false
         }
       });
 
@@ -1483,9 +1436,9 @@ const deleteProduct = async (req, res) => {
             product_id: Number(id)
           }
         },
-        data: { 
+        data: {
           isDeleted: true,
-          isActive: false 
+          isActive: false
         }
       });
     });
@@ -1522,7 +1475,7 @@ const bulkUpdateProducts = async (req, res) => {
 
     // Prevent updating certain fields in bulk
     const restrictedFields = ['sku', 'slug'];
-    const hasRestrictedFields = Object.keys(updateData).some(field => 
+    const hasRestrictedFields = Object.keys(updateData).some(field =>
       restrictedFields.includes(field)
     );
 
@@ -1635,8 +1588,8 @@ const getFeaturedProducts = async (req, res) => {
           }
         },
         variants: {
-          where: { 
-            isDeleted: false, 
+          where: {
+            isDeleted: false,
             isActive: true,
             // 🆕 Filter variants by country
             OR: [
@@ -1671,7 +1624,7 @@ const getFeaturedProducts = async (req, res) => {
     const filteredProducts = products.filter(product => {
       // If product has variants, check if any variant is available for the country
       if (product.variants && product.variants.length > 0) {
-        const hasAvailableVariant = product.variants.some(variant => 
+        const hasAvailableVariant = product.variants.some(variant =>
           variant.country === country || variant.country === 'Global'
         );
         return hasAvailableVariant;
@@ -1772,8 +1725,8 @@ const getTrendingProducts = async (req, res) => {
           }
         },
         variants: {
-          where: { 
-            isDeleted: false, 
+          where: {
+            isDeleted: false,
             isActive: true,
             // 🆕 Filter variants by country
             OR: [
@@ -1809,7 +1762,7 @@ const getTrendingProducts = async (req, res) => {
     const filteredProducts = products.filter(product => {
       // If product has variants, check if any variant is available for the country
       if (product.variants && product.variants.length > 0) {
-        const hasAvailableVariant = product.variants.some(variant => 
+        const hasAvailableVariant = product.variants.some(variant =>
           variant.country === country || variant.country === 'Global'
         );
         return hasAvailableVariant;
@@ -1964,7 +1917,6 @@ const updateProductSeo = async (req, res) => {
     });
   }
 };
-
 
 const recordSeoAudit = async (req, res) => {
   try {
@@ -2185,13 +2137,13 @@ const uploadProductImage = async (req, res) => {
     });
   } catch (error) {
     console.error('Upload product image error:', error);
-    
+
     // Delete uploaded file on error
     if (req.file) deleteFile(`/uploads/products/${req.file.filename}`);
     if (req.files) {
       req.files.forEach(file => deleteFile(`/uploads/products/${file.filename}`));
     }
-    
+
     res.status(500).json({
       error: 'Failed to upload image'
     });
@@ -2220,7 +2172,7 @@ const deleteProductImage = async (req, res) => {
     }
 
     const existingImages = product.images || [];
-    const imageToDelete = existingImages.find(img => 
+    const imageToDelete = existingImages.find(img =>
       img.filename === imageId || img.url.includes(imageId)
     );
 
@@ -2229,7 +2181,7 @@ const deleteProductImage = async (req, res) => {
     }
 
     // Remove image from array
-    const updatedImages = existingImages.filter(img => 
+    const updatedImages = existingImages.filter(img =>
       !(img.filename === imageId || img.url.includes(imageId))
     );
 
@@ -2362,12 +2314,12 @@ const updateProductImages = async (req, res) => {
     });
   } catch (error) {
     console.error('Update product images error:', error);
-    
+
     // Cleanup uploaded files on error
     if (req.files) {
       req.files.forEach(file => deleteFile(`/uploads/products/${file.filename}`));
     }
-    
+
     res.status(500).json({
       error: 'Failed to update product images'
     });

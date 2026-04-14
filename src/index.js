@@ -55,10 +55,10 @@ app.use(cookieParser());
 
 // Enhanced CORS configuration
 app.use(cors({
-    origin: process.env.CLIENT_ORIGIN || ['http://localhost:3000', 'http://127.0.0.1:3000'],
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
+  origin: process.env.CLIENT_ORIGIN || ['http://localhost:3000', 'http://127.0.0.1:3000'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 }));
 
 // Handle preflight requests
@@ -87,13 +87,13 @@ app.use((error, req, res, next) => {
       });
     }
   }
-  
+
   if (error.message.includes('Invalid file type')) {
     return res.status(400).json({
       error: error.message
     });
   }
-  
+
   next(error);
 });
 
@@ -142,22 +142,22 @@ app.use('/payment-methods', paymentMethodRouter(prisma));
 
 
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(err.status || 500).json({
-        error: err.message || 'Internal Server Error',
-        details: process.env.NODE_ENV === 'development' ? err : {},
-    });
+  console.error(err.stack);
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal Server Error',
+    details: process.env.NODE_ENV === 'development' ? err : {},
+  });
 });
 
 const PORT = process.env.PORT || 3200;
 
 app.listen(PORT, () => {
-    console.log(`Server listening on http://localhost:${PORT}`);
-    console.log(`CORS Client Origin: ${process.env.CLIENT_ORIGIN}`);
-    console.log(`JWT Secret: ${process.env.ACCESS_SECRET ? '***** (Set)' : 'NOT SET (Using default in auth.js)'}`);
-    console.log(`Payload limit: 50MB`);
+  console.log(`Server listening on http://localhost:${PORT}`);
+  console.log(`CORS Client Origin: ${process.env.CLIENT_ORIGIN}`);
+  console.log(`JWT Secret: ${process.env.ACCESS_SECRET ? '***** (Set)' : 'NOT SET (Using default in auth.js)'}`);
+  console.log(`Payload limit: 50MB`);
 });
 
 process.on('beforeExit', async () => {
-    await prisma.$disconnect();
+  await prisma.$disconnect();
 });
