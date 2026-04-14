@@ -8,6 +8,7 @@ require('dotenv').config();
 const emailProcessor = require('./cron/emailProcessor');
 
 const app = express();
+app.set('trust proxy', 1);   // ✅ trust Nginx proxy
 
 // ✅ Serve static files FIRST – before any other middleware or routes
 app.use('/uploads', (req, res, next) => {
