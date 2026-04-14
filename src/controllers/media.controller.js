@@ -22,17 +22,16 @@ const getAllMedia = async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const take = parseInt(limit);
 
-    // Build where clause
     const where = {};
-    
+
     if (type && type !== 'ALL') {
       where.type = type;
     }
-    
+
     if (category) {
       where.category = category;
     }
-    
+
     if (search) {
       where.OR = [
         { originalName: { contains: search, mode: 'insensitive' } },
@@ -40,12 +39,11 @@ const getAllMedia = async (req, res) => {
         { altText: { contains: search, mode: 'insensitive' } }
       ];
     }
-    
+
     if (unusedOnly === 'true') {
       where.isUsed = false;
     }
 
-    // Get media with pagination
     const [media, totalCount] = await Promise.all([
       prisma.media.findMany({
         where,
@@ -80,13 +78,11 @@ const getAllMedia = async (req, res) => {
       prisma.media.count({ where })
     ]);
 
-    // Add full URLs to media items
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    // ✅ Return RELATIVE paths only (no host/protocol)
     const mediaWithUrls = media.map(item => ({
       ...item,
-      url: `/${item.filePath}`,
-      fullUrl: `${baseUrl}/${item.filePath}`,
-      thumbnailUrl: item.type === 'IMAGE' ? `/${item.filePath}` : null
+      url: `/${item.filePath.replace(/\\/g, '/')}`,
+      thumbnailUrl: item.type === 'IMAGE' ? `/${item.filePath.replace(/\\/g, '/')}` : null
     }));
 
     const totalPages = Math.ceil(totalCount / take);
@@ -133,7 +129,6 @@ const getMediaById = async (req, res) => {
       });
     }
 
-    // Add full URL
     const mediaWithUrl = {
       ...media,
       url: `/${media.filePath.replace(/\\/g, '/')}`,
@@ -158,16 +153,11 @@ const getMediaById = async (req, res) => {
 // Upload media files
 const uploadMedia = async (req, res) => {
   let uploadedFiles = [];
-  
+
   try {
     const { title, altText, description, caption, category } = req.body;
-    const uploadedBy = req.user?.id; // From authentication middleware
+    const uploadedBy = req.user?.id;
 
-    console.log('Request body:', req.body);
-    console.log('Uploaded files from middleware:', req.uploadedFiles);
-    console.log('Raw req.files:', req.files);
-
-    // Check if files were processed by middleware
     if (!req.uploadedFiles || !req.uploadedFiles.files || req.uploadedFiles.files.length === 0) {
       return res.status(400).json({
         success: false,
@@ -178,9 +168,7 @@ const uploadMedia = async (req, res) => {
     const processedFiles = req.uploadedFiles.files;
     uploadedFiles = processedFiles;
 
-    // Process each uploaded file
     const mediaPromises = processedFiles.map(async (file) => {
-      // Determine media type based on MIME type
       let type = 'OTHER';
       if (file.mimetype.startsWith('image/')) {
         type = 'IMAGE';
@@ -188,21 +176,19 @@ const uploadMedia = async (req, res) => {
         type = 'VIDEO';
       } else if (file.mimetype.startsWith('audio/')) {
         type = 'AUDIO';
-      } else if (file.mimetype.includes('pdf') || 
-                 file.mimetype.includes('document') || 
-                 file.mimetype.includes('text')) {
+      } else if (file.mimetype.includes('pdf') ||
+        file.mimetype.includes('document') ||
+        file.mimetype.includes('text')) {
         type = 'DOCUMENT';
       }
 
-      // Get file extension
-      const extension = path.extname(file.originalName).toLowerCase().slice(1) || 
-                       file.mimetype.split('/')[1] || 'unknown';
+      const extension = path.extname(file.originalName).toLowerCase().slice(1) ||
+        file.mimetype.split('/')[1] || 'unknown';
 
-      // Prepare media data
       const mediaData = {
         fileName: file.filename,
         originalName: file.originalName,
-        filePath: file.path.startsWith('/') ? file.path.slice(1) : file.path, // Remove leading slash for storage
+        filePath: file.path.startsWith('/') ? file.path.slice(1) : file.path,
         mimeType: file.mimetype,
         size: file.size,
         extension,
@@ -216,33 +202,25 @@ const uploadMedia = async (req, res) => {
         isUsed: false
       };
 
-      console.log('Creating media record:', mediaData);
-
-      return await prisma.media.create({
-        data: mediaData
-      });
+      return await prisma.media.create({ data: mediaData });
     });
 
     const createdMedia = await Promise.all(mediaPromises);
 
-    // Add URLs to response
+    // ✅ Return RELATIVE paths only
     const mediaWithUrls = createdMedia.map(media => ({
       ...media,
-      url: `/${media.filePath}`,
-      fullUrl: `${req.protocol}://${req.get('host')}/${media.filePath}`,
-      thumbnailUrl: media.type === 'IMAGE' ? `/${media.filePath}` : null
+      url: `/${media.filePath.replace(/\\/g, '/')}`,
+      thumbnailUrl: media.type === 'IMAGE' ? `/${media.filePath.replace(/\\/g, '/')}` : null
     }));
 
     res.status(201).json({
       success: true,
       message: `${processedFiles.length} file(s) uploaded successfully`,
-      data: {
-        media: mediaWithUrls
-      }
+      data: { media: mediaWithUrls }
     });
 
   } catch (error) {
-    // Clean up uploaded files if media creation fails
     if (uploadedFiles.length > 0) {
       cleanupUploadedFiles(uploadedFiles);
     }
@@ -285,7 +263,6 @@ const updateMedia = async (req, res) => {
       }
     });
 
-    // Add URL to response
     const mediaWithUrl = {
       ...updatedMedia,
       url: `/${updatedMedia.filePath.replace(/\\/g, '/')}`,
@@ -334,7 +311,7 @@ const deleteMedia = async (req, res) => {
 
     // Delete physical file
     const fileDeleted = deleteFile(media.filePath);
-    
+
     if (!fileDeleted) {
       console.warn(`Physical file not found for media ID ${id}: ${media.filePath}`);
     }
