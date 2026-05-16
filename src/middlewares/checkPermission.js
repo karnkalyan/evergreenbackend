@@ -6,15 +6,20 @@ module.exports = function checkPermission(permissionName) {
         message: 'Authentication required: Please login to access this resource.' 
       });
     }
-
+    // If permissions are not an array, try to continue for Admin role
     if (!Array.isArray(req.user.permissions)) {
-      console.log("Permission check failed: User permissions array is invalid.");
-      return res.status(403).json({ 
-        message: 'Access denied: User permissions are not properly configured.' 
-      });
+      console.log("Permission check: permissions array missing or invalid. Falling back to role check.");
     }
 
-    if (!req.user.permissions.includes(permissionName)) {
+    // Grant all access to Admin role as a safe fallback to avoid locking out admin users
+    if (req.user.role && String(req.user.role).toLowerCase() === 'admin') {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Permission bypass: user ${req.user.email} is Admin.`);
+      }
+      return next();
+    }
+
+    if (!Array.isArray(req.user.permissions) || !req.user.permissions.includes(permissionName)) {
       console.log(`Permission check failed: User ${req.user.email} does not have '${permissionName}'. Available permissions:`, req.user.permissions);
       return res.status(403).json({ 
         message: `Access Denied: You don't have permission to perform this action.` 
