@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 
-const ACCESS_SECRET = process.env.ACCESS_SECRET || 'IspMainAdminPanel123@!23';
+const ACCESS_SECRET = process.env.ACCESS_SECRET || 'everGreenMedicine@!23!@#$%';
 
 module.exports = (prisma) => {
   return async (req, res, next) => {

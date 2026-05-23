@@ -1,3 +1,23 @@
+const { sendEmail } = require('../cron/emailProcessor');
+
+const getAdminEmails = async (prisma) => {
+  const settings = await prisma.integrationSettings.findFirst({
+    where: { isActive: true }
+  });
+
+  if (!settings?.adminEmails) return [];
+
+  try {
+    const emails = JSON.parse(settings.adminEmails);
+    return Array.isArray(emails)
+      ? emails.map(email => String(email).trim()).filter(email => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+      : [];
+  } catch (error) {
+    console.error('Failed to parse admin emails for medication request:', error);
+    return [];
+  }
+};
+
 async function createMedicationRequest(req, res, next) {
   try {
     const { name, email, phone, medicineName, message } = req.body;
@@ -19,6 +39,25 @@ async function createMedicationRequest(req, res, next) {
         message: message || null
       }
     });
+
+    try {
+      const adminEmails = await getAdminEmails(req.prisma);
+      if (adminEmails.length > 0) {
+        const subject = `New medication request: ${medicineName}`;
+        const body = `
+          <h2>New medication request</h2>
+          <p><strong>Name:</strong> ${name}</p>
+          <p><strong>Email:</strong> ${email}</p>
+          <p><strong>Phone:</strong> ${phone}</p>
+          <p><strong>Medicine:</strong> ${medicineName}</p>
+          ${message ? `<p><strong>Message:</strong> ${message}</p>` : ''}
+        `;
+
+        await Promise.allSettled(adminEmails.map(adminEmail => sendEmail(adminEmail, subject, body)));
+      }
+    } catch (emailError) {
+      console.error('Failed to send medication request admin email:', emailError);
+    }
 
     res.status(201).json({
       success: true,

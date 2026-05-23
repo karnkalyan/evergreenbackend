@@ -453,9 +453,19 @@ const updateCategory = async (req, res) => {
  */
 const getAllCategories = async (req, res) => {
   try {
+    const isPublicRequest = req.path.startsWith('/public/');
     const categories = await req.prisma.category.findMany({
       where: {
-        isDeleted: false
+        isDeleted: false,
+        ...(isPublicRequest ? {
+          isActive: true,
+          products: {
+            some: {
+              isDeleted: false,
+              isActive: true
+            }
+          }
+        } : {})
       },
       include: {
         parent: {
@@ -496,6 +506,65 @@ const getAllCategories = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching categories:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error while fetching categories',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+const getPublicCategories = async (req, res) => {
+  try {
+    const categories = await req.prisma.category.findMany({
+      where: {
+        isDeleted: false,
+        isActive: true,
+        products: {
+          some: {
+            isDeleted: false,
+            isActive: true
+          }
+        }
+      },
+      include: {
+        parent: {
+          select: {
+            id: true,
+            name: true,
+            slug: true
+          }
+        },
+        _count: {
+          select: {
+            products: {
+              where: {
+                isDeleted: false,
+                isActive: true
+              }
+            },
+            children: {
+              where: {
+                isDeleted: false
+              }
+            }
+          }
+        }
+      },
+      orderBy: [
+        { displayOrder: 'asc' },
+        { name: 'asc' }
+      ]
+    });
+
+    res.json({
+      success: true,
+      data: {
+        categories
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching public categories:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error while fetching categories',
@@ -707,16 +776,26 @@ const getCategoryBySlug = async (req, res) => {
  */
 const getCategoryHierarchy = async (req, res) => {
   try {
+    const activeProductFilter = {
+      products: {
+        some: {
+          isDeleted: false,
+          isActive: true
+        }
+      }
+    };
     const categories = await req.prisma.category.findMany({
       where: {
         isDeleted: false,
-        isActive: true
+        isActive: true,
+        ...activeProductFilter
       },
       include: {
         children: {
           where: {
             isDeleted: false,
-            isActive: true
+            isActive: true,
+            ...activeProductFilter
           },
           include: {
             children: {
@@ -867,6 +946,7 @@ module.exports = {
   updateCategory,
   deleteCategory,
   getAllCategories,
+  getPublicCategories,
   getCategoryById,
   getCategoryBySlug,
   getCategoryHierarchy

@@ -28,15 +28,12 @@ module.exports = (prisma) => {
     req.prisma = prisma; 
     next(); 
   });
+
+  // Public guest checkout. The controller still supports authenticated
+  // admin/customer calls when a valid userId is supplied.
+  router.post('/', createOrder);
   
   router.use(isAuthenticated(prisma));
-
-  // Create Order
-  router.post(
-    '/',
-    checkPermission('create_orders'),
-    createOrder
-  );
 
   router.get(
   '/reports/sales',

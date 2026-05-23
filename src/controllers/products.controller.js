@@ -266,10 +266,10 @@ const getAllProducts = async (req, res) => {
     // Search by product name, description, or SKU
     if (search) {
       where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-        { sku: { contains: search, mode: 'insensitive' } },
-        { searchableText: { contains: search, mode: 'insensitive' } }
+        { name: { contains: search } },
+        { description: { contains: search } },
+        { sku: { contains: search } },
+        { searchableText: { contains: search } }
       ];
     }
 
@@ -278,8 +278,8 @@ const getAllProducts = async (req, res) => {
       where.category = {
         OR: [
           { id: isNaN(Number(category)) ? undefined : Number(category) },
-          { slug: { contains: category, mode: 'insensitive' } },
-          { name: { contains: category, mode: 'insensitive' } }
+          { slug: { contains: category } },
+          { name: { contains: category } }
         ].filter(Boolean)
       };
     }
@@ -289,8 +289,8 @@ const getAllProducts = async (req, res) => {
       where.brand = {
         OR: [
           { id: isNaN(Number(brand)) ? undefined : Number(brand) },
-          { slug: { contains: brand, mode: 'insensitive' } },
-          { name: { contains: brand, mode: 'insensitive' } }
+          { slug: { contains: brand } },
+          { name: { contains: brand } }
         ].filter(Boolean)
       };
     }

@@ -164,7 +164,8 @@ const updateWebsiteSettings = async (req, res) => {
       metaDescription,
       metaImage,
 
-      appearanceSettings
+      appearanceSettings,
+      checkoutMode
     } = req.body;
 
     const existingSettings = await req.prisma.websiteSettings.findFirst({
@@ -215,7 +216,10 @@ const updateWebsiteSettings = async (req, res) => {
       ...(metaDescription !== undefined && { metaDescription }),
       ...(metaImage !== undefined && { metaImage }),
 
-      ...(appearanceSettings !== undefined && { appearanceSettings })
+      ...(appearanceSettings !== undefined && { appearanceSettings }),
+      ...(checkoutMode !== undefined && {
+        checkoutMode: checkoutMode === 'login' ? 'login' : 'guest'
+      })
     };
 
     let updatedSettings;

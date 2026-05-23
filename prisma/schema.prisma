@@ -479,8 +479,8 @@ model SearchKeyword {
 model Order {
   id          Int    @id @default(autoincrement())
   orderNumber String @unique @db.VarChar(50)
-  userId      Int
-  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      Int?
+  user        User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   // Add these relation fields
   payment              Payment? // One-to-one with Payment
@@ -1117,6 +1117,7 @@ model WebsiteSettings {
   metaDescription String? @db.Text
   metaImage       String? @db.VarChar(500)
   appearanceSettings      Json?    // Add this line
+  checkoutMode    String   @default("guest") @db.VarChar(20)
 
 
   isActive  Boolean  @default(true)

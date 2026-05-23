@@ -4,6 +4,7 @@ const {
   updateCategory, 
   deleteCategory, 
   getAllCategories, 
+  getPublicCategories,
   getCategoryById,
   getCategoryBySlug,
   getCategoryHierarchy
@@ -32,7 +33,7 @@ module.exports = (prisma) => {
   // Get All Categories (Public)
   router.get(
     '/public/categories',
-    getAllCategories
+    getPublicCategories
   );
 
   // Get Category by Slug (Public)

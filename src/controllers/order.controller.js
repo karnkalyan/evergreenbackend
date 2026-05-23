@@ -166,7 +166,7 @@ const sendCompanyNotification = async (order, eventType, additionalData = {}, pr
     // Send to all company emails
     for (const companyEmail of COMPANY_EMAILS) {
       try {
-        await queueAutomationEmails(
+        const queueResult = await queueAutomationEmails(
           companyEvent, 
           null, // No specific user ID for company emails
           order.id, 
@@ -174,6 +174,13 @@ const sendCompanyNotification = async (order, eventType, additionalData = {}, pr
           prisma,
           companyEmail // Override recipient
         );
+        if (!queueResult || queueResult.queued === 0) {
+          await sendEmail(
+            companyEmail,
+            `New order received: ${order.orderNumber}`,
+            `<p>A new order has been submitted.</p><p><strong>Order:</strong> ${order.orderNumber}<br/><strong>Customer:</strong> ${companyTemplateData.customer_name || 'Customer'}<br/><strong>Email:</strong> ${companyTemplateData.customer_email}<br/><strong>Total:</strong> ${companyTemplateData.order_total}</p>${companyTemplateData.order_items_table || ''}`
+          );
+        }
         console.log(`✅ Company notification sent to ${companyEmail}`);
       } catch (error) {
         console.error(`❌ Failed to send company notification to ${companyEmail}:`, error);
@@ -392,18 +399,17 @@ const createOrder = async (req, res) => {
       discountAmount
     } = req.body;
 
-    // Validate required fields
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        error: 'User ID is required'
-      });
-    }
-
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         success: false,
         error: 'Order must contain at least one item'
+      });
+    }
+
+    if (!contactEmail || !shippingAddress?.name || !shippingAddress?.streetAddress || !shippingAddress?.city || !shippingAddress?.state || !shippingAddress?.zipCode) {
+      return res.status(400).json({
+        success: false,
+        error: 'Customer email and complete shipping details are required'
       });
     }
 
@@ -421,7 +427,7 @@ const createOrder = async (req, res) => {
     });
 
     const validPaymentMethods = dbPaymentMethods.map(pm => pm.code);
-    const normalizedPaymentMethod = paymentMethod.toUpperCase();
+    const normalizedPaymentMethod = String(paymentMethod || '').toUpperCase();
 
     if (!validPaymentMethods.includes(normalizedPaymentMethod)) {
       return res.status(400).json({
@@ -439,16 +445,18 @@ const createOrder = async (req, res) => {
       });
     }
 
-    // Verify user exists
-    const userExists = await prisma.user.findUnique({
-      where: { id: userId }
-    });
-
-    if (!userExists) {
-      return res.status(400).json({
-        success: false,
-        error: 'User not found'
+    let userExists = null;
+    if (userId) {
+      userExists = await prisma.user.findUnique({
+        where: { id: userId }
       });
+
+      if (!userExists) {
+        return res.status(400).json({
+          success: false,
+          error: 'User not found'
+        });
+      }
     }
 
     // Check prescription requirements
@@ -467,7 +475,7 @@ const createOrder = async (req, res) => {
     const requiresPrescription = products.some(p => p.prescription_required);
     
     // Validate prescriptions if required
-    if (requiresPrescription) {
+    if (requiresPrescription && userId) {
       if (!prescriptionIds || !Array.isArray(prescriptionIds) || prescriptionIds.length === 0) {
         return res.status(400).json({
           success: false,
@@ -480,7 +488,7 @@ const createOrder = async (req, res) => {
       const validPrescriptions = await prisma.prescription.findMany({
         where: {
           id: { in: prescriptionIds },
-          userId: userId,
+              userId: userId || null,
           deletedAt: null // Using deletedAt instead of isDeleted
         }
       });
@@ -623,7 +631,7 @@ const createOrder = async (req, res) => {
       const newOrder = await tx.order.create({
         data: {
           orderNumber: generateOrderNumber(),
-          userId,
+          userId: userId || null,
           paymentMethodCode: normalizedPaymentMethod, // Use paymentMethodCode instead of paymentMethod
           currency,
           
@@ -741,13 +749,15 @@ const createOrder = async (req, res) => {
           }
         });
 
-        await tx.couponUsage.create({
-          data: {
-            couponId: coupon.id,
-            userId: userId,
-            orderId: newOrder.id
-          }
-        });
+        if (userId) {
+          await tx.couponUsage.create({
+            data: {
+              couponId: coupon.id,
+              userId,
+              orderId: newOrder.id
+            }
+          });
+        }
       }
 
       return newOrder;
@@ -806,15 +816,28 @@ const createOrder = async (req, res) => {
 
     try {
       // Send ORDER_CONFIRMED email to CUSTOMER
-      await queueAutomationEmails('ORDER_CONFIRMED', userId, completeOrder.id, {
+      const customerName = completeOrder.user
+        ? `${completeOrder.user.firstName || ''} ${completeOrder.user.lastName || ''}`.trim()
+        : completeOrder.shippingAddress?.name || 'Customer';
+
+      const customerEmailResult = await queueAutomationEmails('ORDER_CONFIRMED', userId || null, completeOrder.id, {
         order_id: completeOrder.orderNumber,
-        customer_name: `${completeOrder.user.firstName} ${completeOrder.user.lastName}`,
+        customer_name: customerName,
         order_total: `$${completeOrder.totalAmount.toFixed(2)}`,
         order_date: completeOrder.createdAt.toISOString().split('T')[0],
         tracking_url: `${process.env.FRONTEND_URL}/orders/${completeOrder.id}`,
+        recipientEmail: completeOrder.contactEmail,
         shipping_address: completeOrder.shippingAddress ? 
           `${completeOrder.shippingAddress.streetAddress}, ${completeOrder.shippingAddress.city}, ${completeOrder.shippingAddress.state} ${completeOrder.shippingAddress.zipCode}` : 'N/A'
       }, prisma);
+
+      if ((!customerEmailResult || customerEmailResult.queued === 0) && completeOrder.contactEmail) {
+        await sendEmail(
+          completeOrder.contactEmail,
+          `Order received: ${completeOrder.orderNumber}`,
+          `<p>Hi ${customerName},</p><p>Your order has been submitted successfully. Our team will contact you by email with payment information.</p><p><strong>Order:</strong> ${completeOrder.orderNumber}<br/><strong>Total:</strong> $${completeOrder.totalAmount.toFixed(2)}</p>`
+        );
+      }
 
       // Send COMPANY_NEW_ORDER notification to COMPANY
       await sendCompanyNotification(completeOrder, 'COMPANY_NEW_ORDER', {
@@ -1879,7 +1902,8 @@ const getAdminDashboardStats = async (req, res) => {
         orderNumber: order.orderNumber,
         customerName: order.user ? 
           `${order.user.firstName || ''} ${order.user.lastName || ''}`.trim() || 'Unknown Customer' : 
-          'Unknown Customer',
+          order.shippingAddress?.name || order.billingAddress?.name || 'Guest Customer',
+        contactEmail: order.user?.email || order.contactEmail,
         totalAmount: order.totalAmount,
         status: order.status,
         orderDate: order.createdAt

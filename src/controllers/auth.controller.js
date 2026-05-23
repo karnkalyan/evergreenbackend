@@ -6,8 +6,9 @@ const { OAuth2Client } = require('google-auth-library');
 // --- CONFIGURATION ---
 const ACCESS_SECRET = process.env.ACCESS_SECRET || 'everGreenMedicine@!23!@#$%';
 const REFRESH_SECRET = process.env.REFRESH_SECRET || 'everGreenMedicine@Refresh!3429!@#$%';
-const ACCESS_EXPIRES = '15m';
+const ACCESS_EXPIRES = '1d';
 const REFRESH_EXPIRES = '30d';
+const ACCESS_TOKEN_MAX_AGE = 24 * 60 * 60 * 1000;
 
 // IMPORTANT: Add your Google Client ID to your backend's .env file
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -64,7 +65,7 @@ async function issueTokensAndSetCookies(res, user, rememberMe = true) {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'Strict',
       path: '/',
-      maxAge: 15 * 60 * 1000
+      maxAge: ACCESS_TOKEN_MAX_AGE
     });
 
     // Set refresh token cookie with conditional expiration
@@ -76,7 +77,7 @@ async function issueTokensAndSetCookies(res, user, rememberMe = true) {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'Strict',
-      path: '/auth/refresh',
+      path: '/',
       maxAge: refreshTokenMaxAge
     });
 
@@ -273,7 +274,7 @@ async function refresh(req, res) {
     } catch (error) {
       console.error('JWT verification error:', error);
       res.clearCookie('access_token', { path: '/' });
-      res.clearCookie('refresh_token', { path: '/auth/refresh' });
+      res.clearCookie('refresh_token', { path: '/' });
       return res.status(401).json({ error: 'Invalid refresh token.' });
     }
 
@@ -307,7 +308,7 @@ async function refresh(req, res) {
 
     if (!storedToken || storedToken.revoked) {
       res.clearCookie('access_token', { path: '/' });
-      res.clearCookie('refresh_token', { path: '/auth/refresh' });
+      res.clearCookie('refresh_token', { path: '/' });
       return res.status(401).json({ error: 'Refresh token revoked.' });
     }
 
@@ -319,7 +320,7 @@ async function refresh(req, res) {
       });
       
       res.clearCookie('access_token', { path: '/' });
-      res.clearCookie('refresh_token', { path: '/auth/refresh' });
+      res.clearCookie('refresh_token', { path: '/' });
       return res.status(401).json({ error: 'User account is no longer active.' });
     }
 
@@ -333,7 +334,7 @@ async function refresh(req, res) {
       });
       
       res.clearCookie('access_token', { path: '/' });
-      res.clearCookie('refresh_token', { path: '/auth/refresh' });
+      res.clearCookie('refresh_token', { path: '/' });
       return res.status(401).json({ error: 'User account is no longer active.' });
     }
 
@@ -345,7 +346,7 @@ async function refresh(req, res) {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'Strict',
       path: '/',
-      maxAge: 15 * 60 * 1000
+      maxAge: ACCESS_TOKEN_MAX_AGE
     });
 
     // Remove sensitive data and flatten address
@@ -378,13 +379,13 @@ async function logout(req, res) {
     }
 
     res.clearCookie('access_token', { path: '/' });
-    res.clearCookie('refresh_token', { path: '/auth/refresh' });
+    res.clearCookie('refresh_token', { path: '/' });
     
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
     console.error('Logout error:', error);
     res.clearCookie('access_token', { path: '/' });
-    res.clearCookie('refresh_token', { path: '/auth/refresh' });
+    res.clearCookie('refresh_token', { path: '/' });
     res.json({ message: 'Logged out successfully' });
   }
 }
@@ -408,13 +409,13 @@ async function logoutAll(req, res) {
     }
 
     res.clearCookie('access_token', { path: '/' });
-    res.clearCookie('refresh_token', { path: '/auth/refresh' });
+    res.clearCookie('refresh_token', { path: '/' });
     
     res.json({ message: 'Logged out from all devices successfully' });
   } catch (error) {
     console.error('Logout all error:', error);
     res.clearCookie('access_token', { path: '/' });
-    res.clearCookie('refresh_token', { path: '/auth/refresh' });
+    res.clearCookie('refresh_token', { path: '/' });
     res.json({ message: 'Logged out successfully' });
   }
 }
@@ -486,7 +487,7 @@ async function authMe(req, res) {
 
     if (user.status === 'inactive' || user.status === 'disabled') {
       res.clearCookie('access_token', { path: '/' });
-      res.clearCookie('refresh_token', { path: '/auth/refresh' });
+      res.clearCookie('refresh_token', { path: '/' });
       return res.status(403).json({ error: 'Account is disabled. Please contact administrator.' });
     }
 
