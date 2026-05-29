@@ -1,6 +1,7 @@
 const express = require('express');
 const {
   getIntegrationSettings,
+  getPublicIntegrationSettings,
   updateIntegrationSettings,
   testSmtpConnection,
   testSmsGateway,
@@ -18,7 +19,10 @@ module.exports = (prisma) => {
     next(); 
   });
 
-  // All routes require authentication
+  // Public storefront-safe settings
+  router.get('/public', getPublicIntegrationSettings);
+
+  // All remaining routes require authentication
   router.use(isAuthenticated(prisma));
 
   // Get Integration Settings

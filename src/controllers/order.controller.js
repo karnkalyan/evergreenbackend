@@ -1,6 +1,6 @@
 // src/controllers/order.controller.js
 const { queueAutomationEmails } = require('../services/emailAutomationService');
-const { sendEmail } = require('../cron/emailProcessor'); // Add this import
+const { sendEmail, processQueuedEmails } = require('../cron/emailProcessor'); // Add this import
 
 const generateOrderNumber = () => {
   const timestamp = Date.now().toString();
@@ -12,6 +12,11 @@ const generateOrderNumber = () => {
 
 const sendCompanyNotification = async (order, eventType, additionalData = {}, prisma) => {
   try {
+    const guestName = order.shippingAddress?.name || order.billingAddress?.name || 'Guest Customer';
+    const customerName = order.user
+      ? `${order.user.firstName || ''} ${order.user.lastName || ''}`.trim()
+      : guestName;
+
     // Fetch admin emails from integration settings in database
     let COMPANY_EMAILS = [];
     
@@ -76,12 +81,12 @@ const sendCompanyNotification = async (order, eventType, additionalData = {}, pr
     // Prepare company-specific template data
     const companyTemplateData = {
       order_id: order.orderNumber,
-      customer_name: `${order.user?.firstName || ''} ${order.user?.lastName || ''}`.trim(),
+      customer_name: customerName || 'Customer',
       customer_email: order.user?.email || order.contactEmail || 'N/A',
       order_total: `$${order.totalAmount?.toFixed(2) || '0.00'}`,
-      order_date: new Date(order.createdAt).toLocaleDateString(),
+      order_date: new Date(order.orderDate || order.createdAt).toLocaleDateString(),
       shipping_address: order.shippingAddress ? 
-        `${order.shippingAddress.street}, ${order.shippingAddress.city}, ${order.shippingAddress.state} ${order.shippingAddress.postalCode}` : 'N/A',
+        `${order.shippingAddress.streetAddress || order.shippingAddress.street || ''}, ${order.shippingAddress.city || ''}, ${order.shippingAddress.state || ''} ${order.shippingAddress.zipCode || order.shippingAddress.postalCode || ''}`.replace(/\s+/g, ' ').trim() : 'N/A',
       admin_url: `${process.env.ADMIN_URL || process.env.FRONTEND_URL}/admin/orders/${order.id}`,
       current_date: new Date().toLocaleDateString(),
       ...additionalData
@@ -124,7 +129,7 @@ const sendCompanyNotification = async (order, eventType, additionalData = {}, pr
     }
 
     // Generate order items table for new orders
-    if (eventType === 'NEW_ORDER_RECEIVED' || eventType === 'ORDER_PLACED') {
+    if (eventType === 'NEW_ORDER_RECEIVED' || eventType === 'ORDER_PLACED' || eventType === 'COMPANY_NEW_ORDER') {
       if (order.orderItems && order.orderItems.length > 0) {
         let itemsTable = `
           <div style="background: white; padding: 15px; border-radius: 6px; margin: 15px 0;">
@@ -823,8 +828,10 @@ const createOrder = async (req, res) => {
       const customerEmailResult = await queueAutomationEmails('ORDER_CONFIRMED', userId || null, completeOrder.id, {
         order_id: completeOrder.orderNumber,
         customer_name: customerName,
+        customer_email: completeOrder.contactEmail,
+        customer_phone: completeOrder.contactPhone,
         order_total: `$${completeOrder.totalAmount.toFixed(2)}`,
-        order_date: completeOrder.createdAt.toISOString().split('T')[0],
+        order_date: (completeOrder.orderDate || completeOrder.createdAt).toISOString().split('T')[0],
         tracking_url: `${process.env.FRONTEND_URL}/orders/${completeOrder.id}`,
         recipientEmail: completeOrder.contactEmail,
         shipping_address: completeOrder.shippingAddress ? 
@@ -846,6 +853,10 @@ const createOrder = async (req, res) => {
         contact_phone: completeOrder.contactPhone,
         payment_status: completeOrder.paymentStatus
       }, prisma);
+
+      // Order emails should go out during checkout, including guest checkout.
+      // Queued automation still provides logs/retries; this drains due emails now.
+      await processQueuedEmails();
       
       console.log('Order creation notifications sent successfully');
     } catch (automationError) {

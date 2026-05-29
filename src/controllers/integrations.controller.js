@@ -3,6 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const { encrypt, decrypt } = require('../utils/encryption.js');
 
 const prisma = new PrismaClient();
+const DEFAULT_HOMEPAGE_WHATSAPP_NUMBER = '+16622191702';
 
 // Get integration settings
 const getIntegrationSettings = async (req, res) => {
@@ -29,6 +30,7 @@ const getIntegrationSettings = async (req, res) => {
           
           // Default admin emails (empty array)
           adminEmails: JSON.stringify([]),
+          homepageWhatsappNumber: DEFAULT_HOMEPAGE_WHATSAPP_NUMBER,
           
           smsProvider: 'twilio',
           smsAccountSid: '',
@@ -100,6 +102,35 @@ const getIntegrationSettings = async (req, res) => {
   }
 };
 
+// Public: return only safe storefront integration values.
+const getPublicIntegrationSettings = async (req, res) => {
+  try {
+    const settings = await prisma.integrationSettings.findFirst({
+      where: {
+        isActive: true,
+        isDeleted: false
+      },
+      select: {
+        homepageWhatsappNumber: true
+      }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        homepageWhatsappNumber: settings?.homepageWhatsappNumber || DEFAULT_HOMEPAGE_WHATSAPP_NUMBER
+      }
+    });
+  } catch (error) {
+    console.error('Error in getPublicIntegrationSettings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch public integration settings',
+      error: error.message
+    });
+  }
+};
+
 // Update integration settings
 const updateIntegrationSettings = async (req, res) => {
   try {
@@ -127,6 +158,10 @@ const updateIntegrationSettings = async (req, res) => {
     if (updateData.smtpFromEmail !== undefined) dataToUpdate.smtpFromEmail = updateData.smtpFromEmail || '';
     if (updateData.smtpFromName !== undefined) dataToUpdate.smtpFromName = updateData.smtpFromName || '';
     if (updateData.smtpEncryption !== undefined) dataToUpdate.smtpEncryption = updateData.smtpEncryption || 'tls';
+
+    if (updateData.homepageWhatsappNumber !== undefined) {
+      dataToUpdate.homepageWhatsappNumber = String(updateData.homepageWhatsappNumber || '').trim();
+    }
     
     // Admin Emails - store as JSON string
     if (updateData.adminEmails !== undefined) {
@@ -359,6 +394,7 @@ const updateTestStatus = async (type, isTested) => {
 
 module.exports = {
   getIntegrationSettings,
+  getPublicIntegrationSettings,
   updateIntegrationSettings,
   testSmtpConnection,
   testSmsGateway,

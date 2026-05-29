@@ -1217,6 +1217,9 @@ model IntegrationSettings {
   // Admin Emails for Company Notifications
   adminEmails    String? @db.Text // Store as JSON array of emails
 
+  // Homepage contact buttons
+  homepageWhatsappNumber String? @db.VarChar(30)
+
   // SMS Gateway Settings
   smsProvider   String? @db.VarChar(50) // 'twilio', 'vonage', 'other'
   smsAccountSid String? @db.VarChar(255)

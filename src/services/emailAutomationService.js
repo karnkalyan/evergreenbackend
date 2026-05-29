@@ -227,19 +227,31 @@ const checkRuleConditions = async (conditions, context) => {
 };
 
 const buildDefaultVariables = async (trigger, user, order, customVariables, prisma) => {
+  const getAddressObject = (address) => {
+    if (!address) return null;
+    if (typeof address === 'string') {
+      try {
+        return JSON.parse(address);
+      } catch (error) {
+        console.error('Error parsing address:', error);
+        return null;
+      }
+    }
+    return address;
+  };
+
   // Parse shipping address from JSON
   let shippingAddressString = '';
+  const shippingAddress = getAddressObject(order?.shippingAddress);
+  const billingAddress = getAddressObject(order?.billingAddress);
+
   if (order?.shippingAddress) {
     try {
-      const shippingAddress = typeof order.shippingAddress === 'string'
-        ? JSON.parse(order.shippingAddress)
-        : order.shippingAddress;
-
       shippingAddressString = [
-        shippingAddress.streetAddress || shippingAddress.street,
-        shippingAddress.city,
-        shippingAddress.state,
-        shippingAddress.zipCode || shippingAddress.postalCode
+        shippingAddress?.streetAddress || shippingAddress?.street,
+        shippingAddress?.city,
+        shippingAddress?.state,
+        shippingAddress?.zipCode || shippingAddress?.postalCode
       ].filter(Boolean).join(', ');
     } catch (error) {
       console.error('Error parsing shipping address:', error);
@@ -276,20 +288,27 @@ const buildDefaultVariables = async (trigger, user, order, customVariables, pris
     }
   }
 
+  const fallbackCustomerName = shippingAddress?.name || billingAddress?.name || 'Customer';
+  const customerName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : fallbackCustomerName;
+  const customerFirstName = user?.firstName || fallbackCustomerName.split(' ')[0] || 'Customer';
+  const customerEmail = user?.email || order?.contactEmail || customVariables.recipientEmail;
+  const customerPhone = user?.phoneNumber || order?.contactPhone || customVariables.contact_phone;
+  const paymentMethod = order?.paymentMethodCode || order?.paymentMethod || customVariables.payment_method || 'Unknown';
+
   const variables = {
     // User variables
-    customer_name: user ? `${user.firstName} ${user.lastName}` : 'Customer',
-    customer_first_name: user?.firstName || 'Customer',
-    customer_email: user?.email,
-    customer_phone: user?.phoneNumber,
+    customer_name: customerName || 'Customer',
+    customer_first_name: customerFirstName,
+    customer_email: customerEmail,
+    customer_phone: customerPhone,
 
     // Order variables
     order_id: order?.orderNumber,
-    order_date: order?.createdAt?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0],
+    order_date: (order?.orderDate || order?.createdAt)?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0],
     order_total: order?.totalAmount ? `$${order.totalAmount.toFixed(2)}` : '$0.00',
     order_status: order?.status,
     payment_status: order?.paymentStatus,
-    payment_method: order?.paymentMethod,
+    payment_method: paymentMethod,
 
     // System variables
     current_date: new Date().toISOString().split('T')[0],
@@ -402,7 +421,7 @@ const buildDefaultVariables = async (trigger, user, order, customVariables, pris
 
     case 'PAYMENT_SUCCEEDED':
       variables.payment_date = order?.paidAt?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0];
-      variables.payment_method = order?.paymentMethod || 'Unknown';
+      variables.payment_method = paymentMethod;
       variables.payment_status = 'paid';
       variables.transaction_id = customVariables.transaction_id || order?.transactionId || 'N/A';
       break;
@@ -429,9 +448,9 @@ const buildDefaultVariables = async (trigger, user, order, customVariables, pris
     case 'NEW_ORDER_RECEIVED':
     case 'COMPANY_NEW_ORDER':
       variables.order_items_count = order?.orderItems?.length || 0;
-      variables.payment_method = order?.paymentMethod || 'Unknown';
+      variables.payment_method = paymentMethod;
       variables.payment_status = order?.paymentStatus || 'pending';
-      variables.contact_phone = order?.contactPhone || user?.phoneNumber || 'N/A';
+      variables.contact_phone = customerPhone || 'N/A';
       break;
 
     case 'COMPANY_ORDER_STATUS_UPDATE':
@@ -449,7 +468,7 @@ const buildDefaultVariables = async (trigger, user, order, customVariables, pris
     case 'COMPANY_PAYMENT_STATUS_UPDATE':
       variables.old_payment_status = customVariables.old_payment_status || 'Unknown';
       variables.new_payment_status = customVariables.new_payment_status || 'Unknown';
-      variables.payment_method = order?.paymentMethod || 'Unknown';
+      variables.payment_method = paymentMethod;
       variables.transaction_id = order?.transactionId || 'N/A';
       variables.payment_gateway = customVariables.payment_gateway || 'N/A';
       variables.updated_by = customVariables.updated_by || 'System';
