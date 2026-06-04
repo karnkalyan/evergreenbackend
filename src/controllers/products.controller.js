@@ -1483,7 +1483,8 @@ const bulkUpdateProducts = async (req, res) => {
 const getFeaturedProducts = async (req, res) => {
   try {
     const prisma = req.prisma;
-    const { limit = 10, country = 'Global' } = req.query;
+    const { limit = 100, country = 'Global' } = req.query;
+    const limitNum = Math.min(100, Math.max(1, Number(limit) || 100));
 
     const where = {
       isFeatured: true,
@@ -1592,7 +1593,7 @@ const getFeaturedProducts = async (req, res) => {
       orderBy: {
         createdAt: 'desc'
       },
-      take: Math.min(50, Number(limit))
+      take: limitNum
     });
 
     // 🆕 Filter out products that have no available variants for the country
@@ -1620,7 +1621,8 @@ const getFeaturedProducts = async (req, res) => {
 const getTrendingProducts = async (req, res) => {
   try {
     const prisma = req.prisma;
-    const { limit = 10, country = 'Global' } = req.query;
+    const { limit = 100, country = 'Global' } = req.query;
+    const limitNum = Math.min(100, Math.max(1, Number(limit) || 100));
 
     const where = {
       isTrending: true,
@@ -1730,7 +1732,7 @@ const getTrendingProducts = async (req, res) => {
         { views: 'desc' },
         { createdAt: 'desc' }
       ],
-      take: Math.min(50, Number(limit))
+      take: limitNum
     });
 
     // 🆕 Filter out products that have no available variants for the country
