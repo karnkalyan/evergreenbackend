@@ -148,10 +148,10 @@ const getAdminReviews = (prisma) => async (req, res) => {
     if (search && search.trim()) {
       const searchTerm = search.trim();
       whereClause.OR = [
-        { name: { contains: searchTerm } },
-        { email: { contains: searchTerm } },
-        { message: { contains: searchTerm } },
-        { product: { name: { contains: searchTerm } } },
+        { name: { contains: searchTerm, mode: 'insensitive' } },
+        { email: { contains: searchTerm, mode: 'insensitive' } },
+        { message: { contains: searchTerm, mode: 'insensitive' } },
+        { product: { name: { contains: searchTerm, mode: 'insensitive' } } },
       ];
     }
 

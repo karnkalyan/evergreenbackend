@@ -17,9 +17,9 @@ module.exports = (prisma) => {
   router.get('/product/:productId', getProductReviews(prisma));
 
   // Admin endpoints (Protected)
-  router.get('/admin', isAuthenticated, getAdminReviews(prisma));
-  router.patch('/admin/:id/status', isAuthenticated, updateReviewStatus(prisma));
-  router.delete('/admin/:id', isAuthenticated, deleteReview(prisma));
+  router.get('/admin', isAuthenticated(prisma), getAdminReviews(prisma));
+  router.patch('/admin/:id/status', isAuthenticated(prisma), updateReviewStatus(prisma));
+  router.delete('/admin/:id', isAuthenticated(prisma), deleteReview(prisma));
 
   return router;
 };
