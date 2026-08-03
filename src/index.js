@@ -50,6 +50,7 @@ const aboutUsRoute = require('./routes/aboutUs.routes');
 const countryRouter = require('./routes/country.routes');
 const shippingRouter = require('./routes/shipping.routes');
 const paymentMethodRouter = require('./routes/paymentMethod.routes');
+const reviewRouter = require('./routes/review.routes');
 const websiteController = require('./controllers/websiteSettings.controller');
 
 // Body parsers & CORS
@@ -127,6 +128,7 @@ app.use('/about-us', aboutUsRoute(prisma));
 app.use('/countries', countryRouter(prisma));
 app.use('/shipping', shippingRouter(prisma));
 app.use('/payment-methods', paymentMethodRouter(prisma));
+app.use('/reviews', reviewRouter(prisma));
 
 // Global error handler
 app.use((err, req, res, next) => {

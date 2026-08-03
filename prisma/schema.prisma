@@ -389,6 +389,7 @@ model Product {
   searchKeywords        SearchKeyword[]
   orderItems            OrderItem[]
   cartItems             CartItem[]
+  reviewsList           Review[]
 
   @@index([sku])
   @@index([slug])
@@ -404,6 +405,32 @@ model Product {
   @@index([country])        // 🆕 NEW INDEX
   @@index([stock])          // 🆕 NEW INDEX
 }
+
+enum ReviewStatus {
+  APPROVED
+  PENDING
+  HIDDEN
+}
+
+model Review {
+  id        Int          @id @default(autoincrement())
+  productId Int
+  product   Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name      String       @db.VarChar(100)
+  email     String       @db.VarChar(191)
+  rating    Int          @default(5)
+  message   String       @db.Text
+  status    ReviewStatus @default(APPROVED)
+  isDeleted Boolean      @default(false)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([productId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([isDeleted])
+}
+
 
 model ProductVariant {
   id         Int             @id @default(autoincrement())
