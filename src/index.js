@@ -9,8 +9,8 @@ const emailProcessor = require('./cron/emailProcessor');
 
 const app = express();
 
-// ✅ TRUST PROXY – must be set BEFORE any middleware that uses it
-app.set('trust proxy', true);
+// ✅ TRUST PROXY – set to 1 (first proxy hop e.g. Nginx) to satisfy express-rate-limit
+app.set('trust proxy', 1);
 
 // ✅ Correct static path – one level above src/
 const staticPath = path.join(__dirname, '..', 'uploads');
