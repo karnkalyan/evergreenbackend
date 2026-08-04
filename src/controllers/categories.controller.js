@@ -731,8 +731,7 @@ const getCategoryBySlug = async (req, res) => {
               }
             }
           }
-        },
-        _count: {
+        },        _count: {
           select: {
             products: {
               where: {
@@ -845,7 +844,6 @@ const getCategoryHierarchy = async (req, res) => {
       ]
     });
 
-    // Filter only top-level categories (no parent)
     const topLevelCategories = categories.filter(cat => !cat.parentId);
 
     res.json({
@@ -878,14 +876,17 @@ const deleteCategory = async (req, res) => {
 
     const categoryId = parseInt(id);
 
-    // Check if category exists
     const category = await req.prisma.category.findUnique({
       where: { id: categoryId },
       include: {
         _count: {
           select: {
-            products: true,
-            children: true
+            products: {
+              where: { isDeleted: false }
+            },
+            children: {
+              where: { isDeleted: false }
+            }
           }
         }
       }
@@ -898,7 +899,6 @@ const deleteCategory = async (req, res) => {
       });
     }
 
-    // Check if category has products or children
     if (category._count.products > 0 || category._count.children > 0) {
       return res.status(400).json({
         success: false,
@@ -906,7 +906,6 @@ const deleteCategory = async (req, res) => {
       });
     }
 
-    // Soft delete the category
     await req.prisma.category.update({
       where: { id: categoryId },
       data: { 

@@ -685,7 +685,6 @@ const getSitemap = async (req, res) => {
     <changefreq>weekly</changefreq>
   </url>`);
     });
-
     blogs.forEach(blog => {
       if (!blog.slug) return;
 
@@ -726,11 +725,12 @@ const getRobotsTxt = async (req, res) => {
       select: { robotsTxt: true }
     });
 
-    let robotsContent = settings?.robotsTxt;
+    let robotsContent = settings?.robotsTxt?.trim();
 
     if (!robotsContent) {
       robotsContent = `User-agent: *
 Allow: /
+Disallow: /admin/
 
 Sitemap: ${baseUrl}/sitemap.xml`;
     }
