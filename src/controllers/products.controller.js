@@ -476,30 +476,42 @@ const getPublicProducts = async (req, res) => {
       category: { isDeleted: false, isActive: true }
     };
 
+    const andConditions = [];
+
     if (country && country !== 'all') {
-      where.OR = [
-        { country: 'Global' },
-        { country: country },
-        {
-          variants: {
-            some: {
-              country: { in: [country, 'Global'] },
-              isDeleted: false,
-              isActive: true
+      andConditions.push({
+        OR: [
+          { country: 'Global' },
+          { country: country },
+          {
+            variants: {
+              some: {
+                country: { in: [country, 'Global'] },
+                isDeleted: false,
+                isActive: true
+              }
             }
           }
-        }
-      ];
+        ]
+      });
     }
 
-    if (search) {
-      where.OR = [
-        ...(where.OR || []),
-        { name: { contains: search } },
-        { description: { contains: search } },
-        { sku: { contains: search } },
-        { searchableText: { contains: search } }
-      ].filter(Boolean);
+    if (search && String(search).trim() !== '') {
+      const searchTerm = String(search).trim();
+      andConditions.push({
+        OR: [
+          { name: { contains: searchTerm } },
+          { description: { contains: searchTerm } },
+          { shortDescription: { contains: searchTerm } },
+          { composition: { contains: searchTerm } },
+          { sku: { contains: searchTerm } },
+          { searchableText: { contains: searchTerm } }
+        ]
+      });
+    }
+
+    if (andConditions.length > 0) {
+      where.AND = andConditions;
     }
 
     if (category) {
