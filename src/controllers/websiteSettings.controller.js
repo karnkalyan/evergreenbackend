@@ -661,11 +661,11 @@ const getSitemap = async (req, res) => {
 
     products.forEach(product => {
       if (!product.slug) return;
-
+      const date = product.updatedAt ? new Date(product.updatedAt).toISOString().split('T')[0] : getTodayIso();
       urlEntries.push(`
   <url>
     <loc>${buildSitemapUrl(baseUrl, `/product/${encodePathSegment(product.slug)}`)}</loc>
-    <lastmod>${product.updatedAt.toISOString().split('T')[0]}</lastmod>
+    <lastmod>${date}</lastmod>
     <priority>0.8</priority>
     <changefreq>weekly</changefreq>
   </url>`);
@@ -673,22 +673,22 @@ const getSitemap = async (req, res) => {
 
     categories.forEach(category => {
       if (!category.slug) return;
-
+      const date = category.updatedAt ? new Date(category.updatedAt).toISOString().split('T')[0] : getTodayIso();
       urlEntries.push(`
   <url>
     <loc>${buildSitemapUrl(baseUrl, `/category/${encodePathSegment(category.slug)}`)}</loc>
-    <lastmod>${category.updatedAt.toISOString().split('T')[0]}</lastmod>
+    <lastmod>${date}</lastmod>
     <priority>0.7</priority>
     <changefreq>weekly</changefreq>
   </url>`);
     });
     blogs.forEach(blog => {
       if (!blog.slug) return;
-
+      const date = blog.updatedAt ? new Date(blog.updatedAt).toISOString().split('T')[0] : getTodayIso();
       urlEntries.push(`
   <url>
     <loc>${buildSitemapUrl(baseUrl, `/blog/${encodePathSegment(blog.slug)}`)}</loc>
-    <lastmod>${blog.updatedAt.toISOString().split('T')[0]}</lastmod>
+    <lastmod>${date}</lastmod>
     <priority>0.6</priority>
     <changefreq>monthly</changefreq>
   </url>`);
@@ -699,7 +699,7 @@ const getSitemap = async (req, res) => {
 ${urlEntries.join('\n')}
 </urlset>`;
 
-    res.header('Content-Type', 'application/xml');
+    res.header('Content-Type', 'application/xml; charset=utf-8');
     res.send(sitemap);
   } catch (error) {
     console.error('Error generating sitemap:', error);
