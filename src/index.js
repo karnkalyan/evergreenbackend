@@ -92,11 +92,11 @@ app.use((error, req, res, next) => {
 });
 
 // SEO routes
-app.get('/sitemap.xml', (req, res) => {
+app.get(['/sitemap.xml', '/api/sitemap.xml'], (req, res) => {
   req.prisma = prisma;
   websiteController.getSitemap(req, res);
 });
-app.get('/robots.txt', (req, res) => {
+app.get(['/robots.txt', '/api/robots.txt'], (req, res) => {
   req.prisma = prisma;
   websiteController.getRobotsTxt(req, res);
 });
