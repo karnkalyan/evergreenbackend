@@ -1,5 +1,3 @@
-const fs = require('fs');
-const path = require('path');
 const { cleanupUploadedFiles } = require('../middlewares/upload');
 
 /* =========================================================
@@ -80,43 +78,6 @@ const encodePathSegment = (value) => encodeURIComponent(String(value || '').trim
 const buildSitemapUrl = (baseUrl, path) => escapeXml(joinUrl(baseUrl, path));
 
 const getTodayIso = () => new Date().toISOString().split('T')[0];
-
-const syncSeoFilesToDisk = async (prisma) => {
-  try {
-    const baseUrl = safeBaseUrl(process.env.FRONTEND_URL || 'https://evergreenpharma.us');
-    const settings = await prisma.websiteSettings.findFirst({
-      where: { isActive: true, isDeleted: false },
-      select: { robotsTxt: true, sitemapUrl: true }
-    });
-
-    let robotsContent = settings?.robotsTxt?.trim();
-    if (!robotsContent) {
-      robotsContent = `User-agent: *\nAllow: /\nDisallow: /admin/`;
-    }
-    const sitemapLocation = settings?.sitemapUrl || `${baseUrl}/sitemap.xml`;
-    if (!robotsContent.toLowerCase().includes('sitemap:')) {
-      robotsContent += `\n\nSitemap: ${sitemapLocation}`;
-    }
-
-    const publicDirs = [
-      path.join(__dirname, '..', '..', '..', 'public'),
-      path.join(__dirname, '..', '..', 'public')
-    ];
-
-    publicDirs.forEach(dir => {
-      try {
-        if (!fs.existsSync(dir)) {
-          fs.mkdirSync(dir, { recursive: true });
-        }
-        fs.writeFileSync(path.join(dir, 'robots.txt'), robotsContent, 'utf8');
-      } catch (e) {
-        console.warn('Could not write robots.txt to', dir, e.message);
-      }
-    });
-  } catch (err) {
-    console.error('Error syncing SEO files to disk:', err);
-  }
-};
 
 /* =========================================================
    WEBSITE SETTINGS
@@ -276,8 +237,6 @@ const updateWebsiteSettings = async (req, res) => {
         }
       });
     }
-
-    await syncSeoFilesToDisk(req.prisma);
 
     res.json({
       success: true,
